@@ -14,6 +14,7 @@ A native Android app for India's delivery, bike-taxi and rental riders who can't
 - **LLM**: Agora-managed OpenAI `gpt-4o-mini` (default, no key). Google Gemini `gemini-3.5-flash-lite` (native `gemini` style) via `LLM_PROVIDER=gemini`. See "Decisions".
 - **STT/TTS**: Sarvam (Indian languages, code-mixed Hinglish): STT auto-detect, TTS `bulbul:v3` voice `priya`, pace 1.08. Fallback via `VOICE_STACK=managed`: Agora-managed Deepgram nova-3 + MiniMax.
 - **Actions**: Agora ConvoAI custom tools (`llm.tools`, v2.12) → backend `/tools/*` over cloudflared → phone via server-sent RTM messages. Jev (TypeSafe AI, via jevai.org) reads each rider turn alongside the LLM.
+- **Safety** (Phase 3, `android/.../safety/`): on-device crash detection (accelerometer + gyroscope + GPS speed), "are you OK?" check, SOS by SMS over the SIM, fatigue reminder. Needs neither the backend nor the internet; Agora's speak API voices the check when connected.
 - **Maps**: `MAPS_PROVIDER=geoapify` (default; free, OpenStreetMap data, motorcycle mode) or `google` (Routes + Places (New), TWO_WHEELER, live traffic; blocked on Google Cloud billing verification for now). Same interface in `backend/src/maps/`.
 - **Dev machine**: Windows 11 (PowerShell). Test devices: Realme 5 Pro (Android 11) and the `Pixel_8d` emulator (API 36).
 
@@ -25,6 +26,7 @@ A native Android app for India's delivery, bike-taxi and rental riders who can't
 4. App → `POST /agent/stop` on End Ride. Safety net: agent idle-timeout 30 s after the rider leaves; backend stops its agents on Ctrl+C.
 5. Tools: the LLM calls a custom tool → Agora POSTs `PUBLIC_BASE_URL/tools/<name>` with the ride's secret (template variable) → backend asks the phone over RTM (`pillion.request` from RTM user `pillion-server`) → app answers `POST /ride/device-result` → backend calls Google if needed → JSON back to the LLM. Backend also sends `pillion.action` lines ("✓ SMS sent to Rahul") for the transcript.
 6. App posts each final rider transcript to `POST /ride/turn`; Jev classifies it (intent + "is this a yes?") and prefetches the data the LLM is about to ask for. Per-turn `[jev]` and `[tool]` lines in the backend log show routing, agreement with the LLM and timing.
+7. Safety (on the phone): Start Ride starts `RideService` (sensors → `CrashDetector` on a background thread) and `SafetyMonitor` first, then tries the voice. Crash → siren + vibration, full-screen alert over the lock screen, "Aap theek ho?" via `POST /ride/say` → Agora speak API (or Android TTS), 20 s countdown; the rider's final transcripts are classified on the phone (`SafetyPhrases`). No answer / "help" → SMS to emergency contacts. Voice SOS: `sendSos` custom tool → phone starts a 5 s countdown. Logcat tags `Safety`, `SafetySensors`.
 
 ## Feature roadmap
 
@@ -58,6 +60,8 @@ They care about: deep Agora usage (not a re-skinned sample), production-quality 
 - Android: open `/android` in Android Studio. Backend URL: `-PPILLION_BACKEND_URL=...` Gradle property, else `PILLION_BACKEND_URL` in `android/local.properties`, else `http://10.0.2.2:3000` (emulator).
 - Real phone (USB or wireless debugging): `.\scripts\phone.ps1` — adb reverse, build with `http://localhost:3000`, install, follow logs. Wireless adb drops on sleep/Wi-Fi change → reconnect and rerun.
 - Real phone on mobile data: build with the tunnel's https URL and set `ALLOW_PUBLIC_RIDE_START=true` (by default `/agent/start`, `/agent/stop` and `/debug/latency` refuse requests that arrive through Cloudflare, so a leaked tunnel URL can't start agents on the Agora account).
+- Safety testing (debug builds): the ride screen's debug card has "Simulate crash" (synthetic trace through the real detector), a CSV sensor recorder, demo mode (no speed gate, 2.5 g: drop the phone on a mattress) and a 2-minute fatigue reminder. Recorded traces: `adb pull /sdcard/Android/data/app.pillion/files/traces`, copy into `android/app/src/testDebug/resources/traces/` as `ride_*.csv` (must not trigger) or `crash_*.csv` (must trigger; `demo` in the name = demo config), then run the unit tests.
+- Unit tests: `cd android; .\gradlew.bat :app:testDebugUnitTest` (detector scenarios, reply classifier, SOS text, fatigue).
 - The emulator (`Pixel_8d`) is not usable for voice on this machine: its host mic delivers silence and audio output is broken system-wide. Test voice on the Realme.
 
 ## Decisions
@@ -73,10 +77,24 @@ They care about: deep Agora usage (not a re-skinned sample), production-quality 
 - **Maps on Geoapify (Google billing verification failed).** Geoapify ETA has **no live traffic**: it uses Geoapify's `traffic=approximated` model (typical slowdowns on busy roads). The tool result says `traffic: "typical_estimate"` and the prompt forbids claiming live traffic. For scale: 8 km Connaught Place → Laxmi Nagar Metro = 8 min free-flow vs 26 min approximated. Nearby places use fixed categories (Geoapify Places has no free-text search; "puncture" as text finds nothing), then the route matrix gives road distances and re-sorts by them. The drop address is geocoded (cached); wording matters: "Laxmi Nagar Metro Station, Delhi" resolves exactly, the same with "Vikas Marg, 110092" lands ~2 km off. OCR addresses (Phase 4) will need care or Google.
 - Customer phone number stays on the phone; the backend only sees name, drop address, and GPS when a tool needs them. Seeded order ships with no number, so SMS/calls can't reach a stranger; debug builds take `PILLION_TEST_CUSTOMER_PHONE` from `android/local.properties` (gitignored) or the debug card.
 - Phone calls: placed with `TelecomManager.placeCall` (works with the screen locked). While any call is active, the app disables Agora mic capture and mutes the agent (call state via `TelephonyCallback`/`PhoneStateListener`).
+- **Safety is on-device and offline-first (Phase 3).** A ride = safety (always on) + voice (optional). If the backend, tunnel, Agora or internet is down, the ride runs "voice offline" with a Retry button; crash detection, the alert (on-device TTS, siren, button) and the SOS (SMS over the SIM, plain Google Maps link) still work. Voice cancel needs Agora (no offline speech recogniser, by design).
+- **Crash detector** (`CrashDetector`, thresholds in `CrashConfig`): moving → impact → tumble → down.
+  - Speed gate: GPS ≥ 15 km/h within 8 s before the impact (during a GPS gap under 30 s the last fix decides). **No GPS for 30 s** (flyover, lanes, location off): no speed gate, but ≥ 6 g instead of 4 g.
+  - Impact ≥ 4 g (WreckWatch's threshold; pocket bumps mostly < 3 g, mount potholes can exceed 4 g, so never alone).
+  - Tumble: tilt relative to pre-impact gravity ≥ 45° within −0.5…+2.5 s, from the gyroscope integrated as a quaternion (vibration cancels out). Measured against gravity so **turning a corner doesn't count** (a whole-rotation measure raised a false alarm on "pothole mid-turn, then stop" in the tests). No gyroscope → the final orientation change stands in.
+  - Down: 6 consecutive seconds within 30 s, from 1 s after the impact: no fix ≥ 8 km/h, and still (|a| std ≤ 0.10 g, gyro ≤ 0.35 rad/s) or lying (≥ 60° from the pre-impact orientation, gyro ≤ 0.5 rad/s: a mount on a fallen bike with the engine running). Any fix ≥ 15 km/h from 4 s after → "kept riding".
+  - A second impact > 1 s later re-times the stages (keeps orientation and rotation); 30 s cooldown after a detection. Alert ≈ 7–8 s after the impact.
+- **Crash check:** siren (alarm stream, max volume, restored after) + vibration; full-screen alert via a high-priority notification's full-screen intent (the only way from the background) with an I'M OK action; prompt via Agora speak (`INTERRUPT`, not interruptable) if the agent starts speaking within ~4 s, else Android TTS (hi-IN/en-IN) after the siren; 20 s countdown, prompt repeated at 10 s. Transcripts arriving while the phone itself speaks are ignored, and countdown prompts contain no listed phrase (tested), so Pillion can't cancel or send its own alert. Unclear replies keep counting.
+- **SOS:** SMS to ≤ 3 contacts at once; GSM-7 only (Roman Hindi line) so the first SMS is 2 parts; per-contact sent/delivered from Android's real callbacks; fix = live GPS if ≤ 10 s old, else a fresh fix within 5 s, else the newest known with its age, else "location not available" (never waits longer). Follow-ups every 2 min × 5 (debug: 30 s × 2) to all contacts (a failed first SOS is re-sent in full); they stop only on the "I'M OK NOW" tap (not voice), which texts the contacts that the rider is OK. Auto-call of the first contact: `SafetyConfig.autoCallFirstContact`, default off. End Ride is disabled while an alert runs.
+- **Manual SOS:** the `sendSos` tool skips the yes/no confirmation; the phone gives 5 s to cancel (button, or "cancel" by voice). The on-screen SOS button does the same offline.
+- **Wake lock:** none while riding (sensors batched ≤ 1 s in the sensor hub, GPS 1 Hz); a partial wake lock only while an alert/SOS runs, time-limited to countdown + follow-ups + 2 min and released when nothing is scheduled.
+- Emergency contacts via the system contact picker (no READ_CONTACTS), stored only on the phone, plus the rider's name for the SMS. Safety events go into `safety_alerts` (`source='live'`; kinds `crash_detected`, `crash_cancelled`, `manual_sos`, `sos_cancelled`, `sos_sent`, `sos_failed`, `sos_ended`, `fatigue_reminder`) and the transcript.
+- Fatigue: 120 min continuous riding (stops < 10 min don't reset it, a longer stop does), repeated every 30 min; without GPS the ride time counts. Debug switch: 2 min.
 
 ## Later phases (agreed)
 
 - **Final phase:** README, including the "Agora SDK feedback" section built from the notes below.
+- **Phase 3 device checks (to do on the Realme):** Simulate crash → voice check, alarm, countdown, SOS SMS to the test phone; "main theek hoon" cancels, "help" sends; backend stopped + mobile data off; screen locked (full-screen alert on ColorOS); manual SOS by voice and button; follow-ups stop on I'M OK NOW; fatigue at 2 min; denied permissions; record a real ride (`ride_*.csv`) to check the detector against Delhi roads.
 - **Phase 2 leftovers to verify on device:** permission-denied cards (skipped), earnings with Jev off (see Phase 2 tests), the "✓ Delivered" line (depends on Vi sending delivery reports). SMS to the iPhone test number didn't arrive while Android → Android did: iPhone-side filtering, not the app.
 
 ## Agora SDK feedback — notes for the README
@@ -107,6 +125,18 @@ Turn detection 640→400 ms: the part before the final transcript (end-of-speech
 13. Non-JSON tool error bodies go verbatim into the LLM context. We hit it because Cloudflare (the tunnel) replaces an origin's 502/504 with a large HTML error page (400/403/409/424/500/503 pass through). Tool failures now use 4xx (424 for phone/maps).
 14. Step-1 check (think API, no audio): managed gpt-4o-mini called both custom tools correctly, including `{{args.*}}`, `{{template_variables.*}}` in headers and `{{tool_call_id}}`. User turn → tool result ≈ 2.6 s once and ≈ 9 s once (the second right after an interrupted reply).
 15. Idle timeout also applies when the remote user never joins (agent stops ~30–40 s after start), and history is gone after stop — scripts must fetch history while the agent runs.
+16. Speak API (`AgentSession.say` → `/speak`, priority `INTERRUPT`, `interruptable: false`): 620 ms per REST call from India, and the text **is added to the LLM history** as an assistant turn (checked with `/debug/history`), so the LLM understands the rider's answer to "Aap theek ho?". The docs don't say either way.
+17. Speak is server-side REST only (needs the app certificate / customer credentials), so a phone can't make its own agent speak without a backend round trip; for safety the app falls back to Android TTS.
+18. Filler words also play on the `sendSos` tool turn ("जांच कर रहा हूँ" before the SOS line): no per-tool control (see 10).
+
+## Crash detection: known limits (for the README)
+
+Validated on synthetic traces only (unit tests, 5 noise seeds each, `CrashDetectorTest`) until real rides are recorded. The traces are modelled, not measured.
+- Missed: a hit while stopped (rear-ended at a signal: speed gate); a rider who gets up and moves within ~7 s (no "down"); slides under 15 km/h; a crash in the first 30 s of a ride before any GPS fix; with GPS lost, impacts under 6 g; on a phone without a gyroscope, a fall that leaves the phone at a similar angle.
+- False alarms (cancellable): the phone falling off the mount or out of a pocket while riding; a drop within ~2–3 s of stopping (GPS lag); a drop while parked when GPS has been lost for 30 s.
+- Thresholds come from published phone-based crash detection practice, not from measured Delhi riding; the recorder and `RecordedTracesTest` exist to check them against real rides.
+- The alert shows over the lock screen and when Pillion is in front; if another app is on an unlocked screen, Android only shows a heads-up notification (with I'M OK), plus the alarm and voice. Do Not Disturb "total silence" may mute the siren.
+- Some phones (ColorOS) kill background apps: detection needs the ride's foreground service and battery optimisation off (setup card).
 
 ## Jev (TypeSafe AI) notes for the README
 
@@ -129,4 +159,5 @@ Turn detection 640→400 ms: the part before the final transcript (end-of-speech
 ## Phase log
 
 - Phase 1 done: foundation + live voice loop — Start/End Ride, Hindi/English/Hinglish voice with live transcript, barge-in, mic permission flow, locked-screen foreground service, per-turn latency metrics; default LLM switched to Agora-managed gpt-4o-mini (Gemini 24–37 s → gpt-4o-mini ~1 s to first token).
+- Phase 3 built on `phase-3-safety`, device checks pending: crash detector + 28 scenario tests (synthetic, 5 seeds each), reply classifier / SOS text / fatigue tests, crash check (Agora speak or on-device TTS, siren, lock-screen alert, 20 s countdown, voice cancel/help on the phone), SOS SMS with location + follow-ups + "I'm OK" message, `sendSos` voice tool and offline SOS button, emergency contacts, fatigue reminder, safety log, rides without backend/Agora ("voice offline"), debug simulate/recorder/demo mode. Agora speak API checked on a real agent: 200 in 620 ms, text lands in the LLM history; "SOS bhejo, accident ho gaya" → phone-backed tool called without confirmation.
 - Phase 2 done: voice actions via Agora ConvoAI custom tools — next-drop ETA and nearby places (Geoapify; Google behind `MAPS_PROVIDER`), today's earnings vs yesterday (seeded on-phone SQLite), SMS and call to the customer after a spoken yes checked on the server, device actions relayed over server-sent RTM messages, action lines in the transcript, calls pause Pillion's audio, Jev intent routing alongside the LLM with per-turn logs, filler words at 1.5 s (generated, in the rider's language). Verified on the Realme in Hindi and English: ETA, nearby, earnings, SMS (Android → Android), call.
