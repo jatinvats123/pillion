@@ -6,7 +6,10 @@ import android.content.Intent
 import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
+import android.os.PowerManager
 import android.provider.Settings
+import android.speech.tts.TextToSpeech
+import android.widget.Toast
 import androidx.activity.compose.LocalActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -36,12 +39,15 @@ import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -51,6 +57,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
@@ -66,19 +73,28 @@ import app.pillion.BuildConfig
 import app.pillion.R
 import app.pillion.data.Order
 import app.pillion.device.RidePermission
+import app.pillion.pillion
+import app.pillion.safety.SafetyState
 import app.pillion.voice.Speaker
 import app.pillion.voice.TranscriptLine
 
 private enum class MicPrompt { None, Rationale, Denied }
 
-/** Screen entry point: owns the microphone permission flow and wires the ViewModel. */
+/** What keeps crash detection or the SOS from working fully; each has a fix. */
+private enum class SetupIssue { NoContacts, Sms, Location, Notifications, FullScreenAlerts, BatteryOptimization, HindiVoice }
+
+/** Screen entry point: owns the permission flows and wires the ViewModel. */
 @Composable
-fun RideRoute(viewModel: RideViewModel = viewModel()) {
+fun RideRoute(onOpenSafety: () -> Unit, viewModel: RideViewModel = viewModel()) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     val testOrder by viewModel.testOrder.collectAsStateWithLifecycle()
+    val safetyState by viewModel.safetyState.collectAsStateWithLifecycle()
+    val contactCount by viewModel.emergencyContactCount.collectAsStateWithLifecycle()
+    val gpsAvailable by viewModel.gpsAvailable.collectAsStateWithLifecycle()
     val context = LocalContext.current
     val activity = LocalActivity.current
     var micPrompt by rememberSaveable { mutableStateOf(MicPrompt.None) }
+    var setupDismissed by rememberSaveable { mutableStateOf(false) }
 
     // Optional extras are only asked once the mic is granted; whatever the answer, the ride starts.
     val optionalPermissionsLauncher = rememberLauncherForActivityResult(
@@ -98,8 +114,8 @@ fun RideRoute(viewModel: RideViewModel = viewModel()) {
         }
     }
 
-    // Asked again from the permission card after an action failed. If Android no longer shows the
-    // dialog ("Don't ask again"), only Settings can fix it.
+    // Asked again from a card after an action failed or for safety setup. If Android no longer
+    // shows the dialog ("Don't ask again"), only Settings can fix it.
     val actionPermissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
     ) { results ->
@@ -107,14 +123,20 @@ fun RideRoute(viewModel: RideViewModel = viewModel()) {
         viewModel.dismissPermission()
     }
 
-    // Returning from Settings with the mic now allowed clears the prompt.
+    // Permissions and settings change outside the app; re-check on every return.
+    var resumes by remember { mutableIntStateOf(0) }
     LifecycleEventEffect(Lifecycle.Event.ON_RESUME) {
         if (context.hasMicPermission()) micPrompt = MicPrompt.None
+        resumes++
     }
+    val setupIssues = remember(contactCount, resumes) { context.safetySetupIssues(contactCount) }
 
     RideScreen(
         state = state,
         micPrompt = micPrompt,
+        safetyState = safetyState,
+        gpsAvailable = gpsAvailable,
+        setupIssues = if (setupDismissed) emptyList() else setupIssues,
         onStartRide = {
             when {
                 context.hasMicPermission() -> optionalPermissionsLauncher.launch(optionalRidePermissions())
@@ -124,14 +146,42 @@ fun RideRoute(viewModel: RideViewModel = viewModel()) {
             }
         },
         onEndRide = viewModel::endRide,
+        onSos = viewModel::sos,
+        onOpenAlert = { SafetyAlertActivity.launch(context) },
+        onRetryVoice = viewModel::retryVoice,
+        onOpenSafety = onOpenSafety,
         onAllowMic = { micPermissionLauncher.launch(Manifest.permission.RECORD_AUDIO) },
         onOpenSettings = { context.openAppSettings() },
         onDismissMicPrompt = { micPrompt = MicPrompt.None },
-        onDismissError = viewModel::dismissError,
         onGrantPermission = { actionPermissionLauncher.launch(it.manifestNames) },
         onDismissPermission = viewModel::dismissPermission,
+        onFixSetup = { issue ->
+            when (issue) {
+                SetupIssue.NoContacts -> onOpenSafety()
+                SetupIssue.Sms -> actionPermissionLauncher.launch(RidePermission.Sms.manifestNames)
+                SetupIssue.Location -> actionPermissionLauncher.launch(RidePermission.Location.manifestNames)
+                SetupIssue.Notifications ->
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                        actionPermissionLauncher.launch(arrayOf(Manifest.permission.POST_NOTIFICATIONS))
+                    }
+                SetupIssue.FullScreenAlerts -> context.openFullScreenAlertSettings()
+                SetupIssue.BatteryOptimization -> context.askToIgnoreBatteryOptimization()
+                SetupIssue.HindiVoice -> context.startSafely(Intent(TextToSpeech.Engine.ACTION_INSTALL_TTS_DATA))
+            }
+        },
+        onDismissSetup = { setupDismissed = true },
         testOrder = testOrder.takeIf { BuildConfig.DEBUG },
         onSaveTestPhone = viewModel::setTestCustomerPhone,
+        debug = if (BuildConfig.DEBUG) {
+            {
+                DebugSafetyCard(
+                    viewModel = viewModel,
+                    rideActive = state.rideActive,
+                )
+            }
+        } else {
+            null
+        },
     )
 }
 
@@ -139,16 +189,25 @@ fun RideRoute(viewModel: RideViewModel = viewModel()) {
 private fun RideScreen(
     state: RideUiState,
     micPrompt: MicPrompt,
+    safetyState: SafetyState,
+    gpsAvailable: Boolean,
+    setupIssues: List<SetupIssue>,
     onStartRide: () -> Unit,
     onEndRide: () -> Unit,
+    onSos: () -> Unit,
+    onOpenAlert: () -> Unit,
+    onRetryVoice: () -> Unit,
+    onOpenSafety: () -> Unit,
     onAllowMic: () -> Unit,
     onOpenSettings: () -> Unit,
     onDismissMicPrompt: () -> Unit,
-    onDismissError: () -> Unit,
     onGrantPermission: (RidePermission) -> Unit,
     onDismissPermission: () -> Unit,
+    onFixSetup: (SetupIssue) -> Unit,
+    onDismissSetup: () -> Unit,
     testOrder: Order?,
     onSaveTestPhone: (String) -> Unit,
+    debug: (@Composable () -> Unit)?,
 ) {
     // Surface supplies the theme's content colour; bare Text would otherwise default to black.
     Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
@@ -157,76 +216,105 @@ private fun RideScreen(
                 .fillMaxSize()
                 .safeDrawingPadding()
                 .padding(horizontal = 20.dp, vertical = 16.dp),
-            verticalArrangement = Arrangement.spacedBy(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            Header(state.status)
+            Header(state.status, onOpenSafety)
 
-            when (micPrompt) {
-                MicPrompt.Rationale -> MessageCard(
-                    title = stringResource(R.string.mic_rationale_title),
-                    body = stringResource(R.string.mic_rationale_body),
-                    actionLabel = stringResource(R.string.mic_allow),
-                    onAction = onAllowMic,
-                    onDismiss = onDismissMicPrompt,
-                )
-                MicPrompt.Denied -> MessageCard(
-                    title = stringResource(R.string.mic_denied_title),
-                    body = stringResource(R.string.mic_denied_body),
-                    actionLabel = stringResource(R.string.open_settings),
-                    onAction = onOpenSettings,
-                    onDismiss = onDismissMicPrompt,
-                    isError = true,
-                )
-                MicPrompt.None -> Unit
-            }
-
-            state.errorMessage?.let { message ->
+            // Always in view: what the rider must know right now.
+            if (safetyState != SafetyState.Idle) {
                 MessageCard(
-                    title = stringResource(R.string.status_error),
-                    body = message,
-                    onDismiss = onDismissError,
+                    title = stringResource(R.string.safety_alert_active),
+                    actionLabel = stringResource(R.string.open),
+                    onAction = onOpenAlert,
                     isError = true,
                 )
             }
+            state.voiceProblem?.let { problem ->
+                MessageCard(
+                    title = stringResource(R.string.voice_offline_title),
+                    body = stringResource(R.string.voice_offline_body, problem),
+                    actionLabel = stringResource(R.string.retry_voice),
+                    onAction = onRetryVoice,
+                )
+            }
 
-            state.permissionNeeded?.let { permission ->
-                val (title, body) = when (permission) {
-                    RidePermission.Location -> R.string.permission_location_title to R.string.permission_location_body
-                    RidePermission.Sms -> R.string.permission_sms_title to R.string.permission_sms_body
-                    RidePermission.Call -> R.string.permission_call_title to R.string.permission_call_body
+            // Cards that scroll away with the transcript.
+            val cards = buildList<@Composable () -> Unit> {
+                when (micPrompt) {
+                    MicPrompt.Rationale -> add {
+                        MessageCard(
+                            title = stringResource(R.string.mic_rationale_title),
+                            body = stringResource(R.string.mic_rationale_body),
+                            actionLabel = stringResource(R.string.mic_allow),
+                            onAction = onAllowMic,
+                            onDismiss = onDismissMicPrompt,
+                        )
+                    }
+                    MicPrompt.Denied -> add {
+                        MessageCard(
+                            title = stringResource(R.string.mic_denied_title),
+                            body = stringResource(R.string.mic_denied_body),
+                            actionLabel = stringResource(R.string.open_settings),
+                            onAction = onOpenSettings,
+                            onDismiss = onDismissMicPrompt,
+                            isError = true,
+                        )
+                    }
+                    MicPrompt.None -> Unit
                 }
-                MessageCard(
-                    title = stringResource(title),
-                    body = stringResource(body),
-                    actionLabel = stringResource(R.string.permission_allow),
-                    onAction = { onGrantPermission(permission) },
-                    onDismiss = onDismissPermission,
-                    isError = true,
+                if (state.rideActive && !gpsAvailable) add {
+                    MessageCard(
+                        title = stringResource(R.string.gps_unavailable_title),
+                        body = stringResource(R.string.gps_unavailable_body),
+                        isError = true,
+                    )
+                }
+                state.permissionNeeded?.let { permission ->
+                    add {
+                        val (title, body) = when (permission) {
+                            RidePermission.Location -> R.string.permission_location_title to R.string.permission_location_body
+                            RidePermission.Sms -> R.string.permission_sms_title to R.string.permission_sms_body
+                            RidePermission.Call -> R.string.permission_call_title to R.string.permission_call_body
+                        }
+                        MessageCard(
+                            title = stringResource(title),
+                            body = stringResource(body),
+                            actionLabel = stringResource(R.string.permission_allow),
+                            onAction = { onGrantPermission(permission) },
+                            onDismiss = onDismissPermission,
+                            isError = true,
+                        )
+                    }
+                }
+                if (setupIssues.isNotEmpty()) add { SetupCard(setupIssues, onFixSetup, onDismissSetup) }
+                if (testOrder != null && !state.rideActive) add { TestOrderCard(testOrder, onSaveTestPhone) }
+                debug?.let { add(it) }
+            }
+            Transcript(cards = cards, lines = state.transcript, modifier = Modifier.weight(1f))
+
+            Row(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
+                SosButton(enabled = safetyState == SafetyState.Idle, onClick = onSos)
+                RideButton(
+                    active = state.rideActive,
+                    ending = state.status == RideStatus.Ending,
+                    alertOn = safetyState != SafetyState.Idle,
+                    onStartRide = onStartRide,
+                    onEndRide = onEndRide,
+                    modifier = Modifier.weight(1f),
                 )
             }
-
-            if (testOrder != null && !state.rideActive) TestOrderCard(testOrder, onSaveTestPhone)
-
-            Transcript(lines = state.transcript, modifier = Modifier.weight(1f))
-
-            RideButton(
-                active = state.rideActive,
-                ending = state.status == RideStatus.Ending,
-                onStartRide = onStartRide,
-                onEndRide = onEndRide,
-            )
         }
     }
 }
 
 @Composable
-private fun Header(status: RideStatus) {
+private fun Header(status: RideStatus, onOpenSafety: () -> Unit) {
     Row(
         modifier = Modifier.fillMaxWidth(),
         verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.SpaceBetween,
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
     ) {
-        Column {
+        Column(Modifier.weight(1f)) {
             Text(
                 text = stringResource(R.string.app_name),
                 style = MaterialTheme.typography.headlineMedium,
@@ -239,6 +327,7 @@ private fun Header(status: RideStatus) {
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
+        TextButton(onClick = onOpenSafety) { Text(stringResource(R.string.safety_button)) }
         StatusLabel(status)
     }
 }
@@ -252,9 +341,9 @@ private fun StatusLabel(status: RideStatus) {
         RideStatus.Thinking -> R.string.status_thinking to Color(0xFF60A5FA)
         RideStatus.Speaking -> R.string.status_speaking to MaterialTheme.colorScheme.primary
         RideStatus.Reconnecting -> R.string.status_reconnecting to Color(0xFFFB923C)
+        RideStatus.VoiceOffline -> R.string.status_voice_offline to Color(0xFFFB923C)
         RideStatus.Ending -> R.string.ending_ride to MaterialTheme.colorScheme.onSurfaceVariant
         RideStatus.Ended -> R.string.status_ended to MaterialTheme.colorScheme.onSurfaceVariant
-        RideStatus.Error -> R.string.status_error to MaterialTheme.colorScheme.error
     }
     Row(
         modifier = Modifier
@@ -274,28 +363,29 @@ private fun StatusLabel(status: RideStatus) {
     }
 }
 
+/** Cards first, then the conversation; follows the newest line. */
 @Composable
-private fun Transcript(lines: List<TranscriptLine>, modifier: Modifier = Modifier) {
-    if (lines.isEmpty()) {
-        Box(modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
-            Text(
-                text = stringResource(R.string.transcript_empty),
-                style = MaterialTheme.typography.bodyLarge,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-        }
-        return
-    }
-
+private fun Transcript(cards: List<@Composable () -> Unit>, lines: List<TranscriptLine>, modifier: Modifier = Modifier) {
     val listState = rememberLazyListState()
     LaunchedEffect(lines.size, lines.lastOrNull()?.text) {
-        listState.animateScrollToItem(lines.lastIndex)
+        if (lines.isNotEmpty()) listState.animateScrollToItem(cards.size + lines.lastIndex)
     }
     LazyColumn(
         state = listState,
         modifier = modifier.fillMaxWidth(),
         verticalArrangement = Arrangement.spacedBy(10.dp),
     ) {
+        items(cards.size) { cards[it]() }
+        if (lines.isEmpty()) {
+            item {
+                Text(
+                    text = stringResource(R.string.transcript_empty),
+                    style = MaterialTheme.typography.bodyLarge,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(vertical = 24.dp),
+                )
+            }
+        }
         items(lines, key = { it.key }) { line -> TranscriptBubble(line) }
     }
 }
@@ -334,7 +424,7 @@ private fun TranscriptBubble(line: TranscriptLine) {
     }
 }
 
-/** Something Pillion did ("✓ SMS sent to Rahul"): a compact line, not a speech bubble. */
+/** Something Pillion did ("✓ SMS sent to Rahul", "⚠ Crash detected"): a compact line, not a speech bubble. */
 @Composable
 private fun ActionLine(line: TranscriptLine) {
     Text(
@@ -346,6 +436,71 @@ private fun ActionLine(line: TranscriptLine) {
             .fillMaxWidth()
             .padding(horizontal = 4.dp, vertical = 2.dp),
     )
+}
+
+@Composable
+private fun SetupCard(issues: List<SetupIssue>, onFix: (SetupIssue) -> Unit, onDismiss: () -> Unit) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer, contentColor = MaterialTheme.colorScheme.onErrorContainer),
+    ) {
+        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text(stringResource(R.string.setup_title), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+            issues.forEach { issue ->
+                val (text, action) = when (issue) {
+                    SetupIssue.NoContacts -> R.string.setup_no_contacts to R.string.add
+                    SetupIssue.Sms -> R.string.setup_sms to R.string.allow
+                    SetupIssue.Location -> R.string.setup_location to R.string.allow
+                    SetupIssue.Notifications -> R.string.setup_notifications to R.string.allow
+                    SetupIssue.FullScreenAlerts -> R.string.setup_full_screen to R.string.allow
+                    SetupIssue.BatteryOptimization -> R.string.setup_battery to R.string.fix
+                    SetupIssue.HindiVoice -> R.string.setup_hindi_voice to R.string.install
+                }
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
+                        Text(stringResource(text), style = MaterialTheme.typography.bodyMedium)
+                        if (issue == SetupIssue.BatteryOptimization && isColorOsFamily()) {
+                            Text(stringResource(R.string.setup_battery_oem), style = MaterialTheme.typography.bodySmall)
+                        }
+                    }
+                    TextButton(onClick = { onFix(issue) }) { Text(stringResource(action)) }
+                }
+            }
+            TextButton(onClick = onDismiss, modifier = Modifier.align(Alignment.End)) { Text(stringResource(R.string.dismiss)) }
+        }
+    }
+}
+
+/** DEBUG BUILDS ONLY — Phase 3 test switches, clearly labelled. */
+@Composable
+private fun DebugSafetyCard(viewModel: RideViewModel, rideActive: Boolean) {
+    val context = LocalContext.current
+    val demo by viewModel.debug.demoMode.collectAsStateWithLifecycle()
+    val fatigue by viewModel.debug.fatigueInTwoMinutes.collectAsStateWithLifecycle()
+    val recording by viewModel.debug.recording.collectAsStateWithLifecycle()
+    val needsRide = stringResource(R.string.debug_simulate_needs_ride)
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
+    ) {
+        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            Text(stringResource(R.string.debug_safety_title), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+            TextButton(onClick = {
+                if (!rideActive || !viewModel.simulateCrash()) Toast.makeText(context, needsRide, Toast.LENGTH_LONG).show()
+            }) { Text(stringResource(R.string.debug_simulate_crash)) }
+            DebugSwitch(stringResource(R.string.debug_record), recording, viewModel.debug::setRecording)
+            DebugSwitch(stringResource(R.string.debug_demo), demo, viewModel.debug::setDemoMode)
+            DebugSwitch(stringResource(R.string.debug_fatigue), fatigue, viewModel.debug::setFatigueInTwoMinutes)
+        }
+    }
+}
+
+@Composable
+private fun DebugSwitch(label: String, checked: Boolean, onChange: (Boolean) -> Unit) {
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Text(label, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
+        Switch(checked = checked, onCheckedChange = onChange)
+    }
 }
 
 /** Debug builds: the seeded order, with its customer number editable so SMS/call tests reach you. */
@@ -380,12 +535,37 @@ private fun TestOrderCard(order: Order, onSavePhone: (String) -> Unit) {
     }
 }
 
+/** Works with or without a ride, voice or internet: a 5-second cancel window, then SMS. */
 @Composable
-private fun RideButton(active: Boolean, ending: Boolean, onStartRide: () -> Unit, onEndRide: () -> Unit) {
+private fun SosButton(enabled: Boolean, onClick: () -> Unit) {
+    val description = stringResource(R.string.sos_button_description)
+    Button(
+        onClick = onClick,
+        enabled = enabled,
+        modifier = Modifier
+            .size(width = 96.dp, height = 72.dp)
+            .semantics { contentDescription = description },
+        shape = RoundedCornerShape(20.dp),
+        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFDC2626), contentColor = Color.White),
+    ) {
+        Text(stringResource(R.string.sos_button), style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Black)
+    }
+}
+
+@Composable
+private fun RideButton(
+    active: Boolean,
+    ending: Boolean,
+    alertOn: Boolean,
+    onStartRide: () -> Unit,
+    onEndRide: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
     Button(
         onClick = if (active) onEndRide else onStartRide,
-        enabled = !ending,
-        modifier = Modifier.fillMaxWidth().height(72.dp),
+        // During a safety alert the rider answers it first.
+        enabled = !ending && !(active && alertOn),
+        modifier = modifier.height(72.dp),
         shape = RoundedCornerShape(20.dp),
         colors = if (active) {
             ButtonDefaults.buttonColors(
@@ -413,8 +593,8 @@ private fun RideButton(active: Boolean, ending: Boolean, onStartRide: () -> Unit
 @Composable
 private fun MessageCard(
     title: String,
-    body: String,
-    onDismiss: () -> Unit,
+    body: String? = null,
+    onDismiss: (() -> Unit)? = null,
     actionLabel: String? = null,
     onAction: () -> Unit = {},
     isError: Boolean = false,
@@ -428,15 +608,19 @@ private fun MessageCard(
     ) {
         Column(Modifier.padding(16.dp)) {
             Text(title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
-            Spacer(Modifier.height(4.dp))
-            Text(body, style = MaterialTheme.typography.bodyMedium)
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.End,
-            ) {
-                TextButton(onClick = onDismiss) { Text(stringResource(R.string.dismiss)) }
-                if (actionLabel != null) {
-                    TextButton(onClick = onAction) { Text(actionLabel) }
+            body?.let {
+                Spacer(Modifier.height(4.dp))
+                Text(it, style = MaterialTheme.typography.bodyMedium)
+            }
+            if (onDismiss != null || actionLabel != null) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.End,
+                ) {
+                    onDismiss?.let { TextButton(onClick = it) { Text(stringResource(R.string.dismiss)) } }
+                    if (actionLabel != null) {
+                        TextButton(onClick = onAction) { Text(actionLabel) }
+                    }
                 }
             }
         }
@@ -445,9 +629,9 @@ private fun MessageCard(
 
 /**
  * Asked once before riding, since the rider can't tap dialogs on the road: location (ETA, nearby
- * places), SMS and phone (message/call the customer, pause Pillion during calls), Bluetooth
- * (earphone routing on Android 12+) and notifications (ride indicator). Any can be refused; the
- * action that needs it then says so and shows a card. Already-decided ones return without a dialog.
+ * places, crash detection, SOS location), SMS and phone (customer messages and calls, SOS), Bluetooth
+ * (earphone routing on Android 12+) and notifications (ride indicator, lock-screen crash alert). Any
+ * can be refused; what needs it then says so and shows a card. Already-decided ones return at once.
  */
 private fun optionalRidePermissions(): Array<String> = buildList {
     RidePermission.entries.forEach { addAll(it.manifestNames) }
@@ -455,12 +639,39 @@ private fun optionalRidePermissions(): Array<String> = buildList {
     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) add(Manifest.permission.POST_NOTIFICATIONS)
 }.toTypedArray()
 
-private fun Context.hasMicPermission() =
-    ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED
+private fun Context.safetySetupIssues(contactCount: Int): List<SetupIssue> = buildList {
+    if (contactCount == 0) add(SetupIssue.NoContacts)
+    if (!granted(Manifest.permission.SEND_SMS)) add(SetupIssue.Sms)
+    if (!granted(Manifest.permission.ACCESS_FINE_LOCATION) && !granted(Manifest.permission.ACCESS_COARSE_LOCATION)) add(SetupIssue.Location)
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU && !granted(Manifest.permission.POST_NOTIFICATIONS)) add(SetupIssue.Notifications)
+    if (!pillion.safety.canShowOverLockScreen()) add(SetupIssue.FullScreenAlerts)
+    if (!getSystemService(PowerManager::class.java).isIgnoringBatteryOptimizations(packageName)) add(SetupIssue.BatteryOptimization)
+    if (pillion.safety.alarm.hindiVoiceMissing) add(SetupIssue.HindiVoice)
+}
+
+// Realme, OPPO and OnePlus (ColorOS) stop background apps beyond Android's own battery optimisation.
+private fun isColorOsFamily() = Build.MANUFACTURER.lowercase() in setOf("realme", "oppo", "oneplus")
+
+private fun Context.granted(permission: String) =
+    ContextCompat.checkSelfPermission(this, permission) == PackageManager.PERMISSION_GRANTED
+
+private fun Context.hasMicPermission() = granted(Manifest.permission.RECORD_AUDIO)
 
 private fun Context.openAppSettings() {
-    startActivity(
-        Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.fromParts("package", packageName, null))
-            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-    )
+    startSafely(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.fromParts("package", packageName, null)))
 }
+
+private fun Context.openFullScreenAlertSettings() {
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+        startSafely(Intent(Settings.ACTION_MANAGE_APP_USE_FULL_SCREEN_INTENT, Uri.fromParts("package", packageName, null)))
+    }
+}
+
+/** Android's own "stop optimising battery usage?" dialog; the list screen if a phone lacks it. */
+private fun Context.askToIgnoreBatteryOptimization() {
+    val ask = Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS, Uri.fromParts("package", packageName, null))
+    if (!startSafely(ask)) startSafely(Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS))
+}
+
+private fun Context.startSafely(intent: Intent): Boolean =
+    runCatching { startActivity(intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) }.isSuccess

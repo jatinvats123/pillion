@@ -218,13 +218,23 @@ class VoiceSession(context: Context) {
         engine.muteAllRemoteAudioStreams(active)
     }
 
-    private fun resetState() {
+    /** A new ride: empties the transcript. */
+    fun clearTranscript() {
         synchronized(transcriptLines) {
             transcriptLines.clear()
+            publishTranscript()
+        }
+    }
+
+    // A (re)join: turn ids start again, so this connection's lines go; action lines (safety events
+    // logged before the voice connected, or while it was down) stay.
+    private fun resetState() {
+        synchronized(transcriptLines) {
+            transcriptLines.entries.removeAll { it.value.speaker != Speaker.Action }
             reportedTurns.clear()
+            publishTranscript()
         }
         latencyTracker.reset()
-        _transcript.value = emptyList()
         _agentState.value = AgentState.Unknown
         _agentPresent.value = false
     }

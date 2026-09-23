@@ -82,6 +82,12 @@ export function toolDefinitions() {
       8000,
     ),
     tool(
+      'sendSos',
+      "Emergency SOS. The rider's phone texts their emergency contacts their location after a 5-second window in which the rider can cancel. Call it straight away, without asking to confirm, when the rider asks for SOS, help in an emergency, an ambulance, or says they had an accident or are hurt.",
+      {},
+      8000,
+    ),
+    tool(
       'confirmPendingAction',
       'Use after you asked the rider to confirm a prepared SMS or call. answer "yes" only if the rider clearly said yes, "no" if they said no or cancelled. Returns whether the SMS was sent or the call placed.',
       { answer: { type: 'string', enum: ['yes', 'no'] } },
@@ -91,6 +97,13 @@ export function toolDefinitions() {
 }
 
 const handlers = {
+  // The phone runs the SOS itself (countdown, SMS over the SIM, speaking the result); this only
+  // starts it. No action line: the phone shows its own.
+  async sendSos(ctx) {
+    const result = await askPhone(ctx.ride, 'sos', {}, 6000);
+    return { body: result, line: null };
+  },
+
   async getNextDropEta(ctx) {
     const route = await prefetchedOr(ctx, 'eta', () => nextDropRoute(ctx.ride));
     return { body: route, line: `Next drop · ${route.distance_km} km · ${route.minutes} min` };
@@ -235,7 +248,7 @@ export async function runTool(ride, name, args) {
     ({ status, body } = toolFailure(error));
     line = `✗ ${ctx.label ?? TOOL_LABELS[name]}: ${body.error.replaceAll('_', ' ')}`;
   }
-  notifyRider(ride, line, status === 200);
+  if (line) notifyRider(ride, line, status === 200);
   logTool(ride, turn, name, status === 200 ? 'ok' : body.error, startedAt, ctx);
   return { status, body };
 }
@@ -304,6 +317,7 @@ const TOOL_LABELS = {
   prepareSms: 'SMS',
   prepareCall: 'Call',
   confirmPendingAction: 'Confirm',
+  sendSos: 'SOS',
 };
 const TOOL_INTENT = {
   getNextDropEta: 'eta',
@@ -312,6 +326,7 @@ const TOOL_INTENT = {
   prepareSms: 'sms_customer',
   prepareCall: 'call_customer',
   confirmPendingAction: 'chat',
+  sendSos: 'sos',
 };
 
 function logTool(ride, turn, name, outcome, startedAt, ctx) {

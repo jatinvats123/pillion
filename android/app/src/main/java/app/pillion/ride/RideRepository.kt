@@ -3,13 +3,17 @@ package app.pillion.ride
 import android.content.Context
 import android.util.Log
 import app.pillion.data.BackendApi
-import app.pillion.data.EarningsDb
 import app.pillion.data.RideCredentials
 import app.pillion.data.SeededOrderSource
 import app.pillion.device.DeviceActions
 import app.pillion.device.RidePermission
 import app.pillion.device.phoneCallActive
+import app.pillion.pillion
+import app.pillion.safety.SafetyVoice
+import app.pillion.voice.AgentState
+import app.pillion.voice.ConnectionState
 import app.pillion.voice.VoiceSession
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.awaitCancellation
@@ -18,8 +22,10 @@ import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.asSharedFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 import org.json.JSONObject
 
 /** Starts and ends a ride: the backend owns the agent, [voice] owns the realtime connection. */
@@ -28,10 +34,11 @@ class RideRepository(
     private val api: BackendApi = BackendApi(),
 ) {
     private val appContext = context.applicationContext
+    val safety = appContext.pillion.safety
     val voice = VoiceSession(appContext)
     val orders = SeededOrderSource(appContext)
-    private val earnings = EarningsDb(appContext)
-    private val actions = DeviceActions(appContext, orders, earnings) { customer, delivered ->
+    private val earnings = appContext.pillion.db
+    private val actions = DeviceActions(appContext, orders, earnings, safety) { customer, delivered ->
         voice.showActionLine(
             if (delivered) "✓ Delivered to $customer" else "✗ SMS to $customer not delivered",
             failed = !delivered,
@@ -61,13 +68,33 @@ class RideRepository(
     }
 
     /**
-     * Everything a live ride does besides audio, until cancelled: forwards final transcripts to the
-     * backend (Jev), answers the backend's device requests, and pauses Pillion during phone calls.
-     * Collect from the main thread.
+     * The ride's Agora agent as the voice of a safety alert: Agora's speak API (via the backend)
+     * with interrupt priority. True once the agent has taken the text and is speaking.
+     */
+    fun safetyVoice(ride: RideCredentials) = SafetyVoice { text, interrupt ->
+        if (voice.connection.value != ConnectionState.Connected || !voice.agentPresent.value) return@SafetyVoice false
+        val wasSpeaking = voice.agentState.value == AgentState.Speaking
+        try {
+            api.say(ride.rideToken, text, interrupt)
+        } catch (error: CancellationException) {
+            throw error
+        } catch (error: Exception) {
+            Log.w(TAG, "Agora say failed; the phone speaks instead", error)
+            return@SafetyVoice false
+        }
+        // An interrupting say while the agent talks may not change its state; otherwise wait for it.
+        wasSpeaking || withTimeoutOrNull(SAY_START_TIMEOUT_MS) { voice.agentState.first { it == AgentState.Speaking } } != null
+    }
+
+    /**
+     * Everything a live ride does besides audio, until cancelled: gives final transcripts to the
+     * safety check (on the phone) and the backend (Jev), answers the backend's device requests,
+     * and pauses Pillion during phone calls. Collect from the main thread.
      */
     suspend fun serveRide(ride: RideCredentials): Nothing = coroutineScope {
         launch {
             voice.riderTurns.collect { turn ->
+                safety.onRiderTurn(turn.text)
                 launch {
                     runCatching { api.postTurn(ride.rideToken, turn.turnId, turn.text) }
                         .onFailure { Log.w(TAG, "Turn not posted", it) }
@@ -110,5 +137,6 @@ class RideRepository(
 
     private companion object {
         const val TAG = "RideRepository"
+        const val SAY_START_TIMEOUT_MS = 3_000L
     }
 }

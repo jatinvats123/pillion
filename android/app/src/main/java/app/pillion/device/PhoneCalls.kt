@@ -3,7 +3,10 @@ package app.pillion.device
 import android.Manifest
 import android.content.Context
 import android.content.pm.PackageManager
+import android.net.Uri
 import android.os.Build
+import android.os.Bundle
+import android.telecom.TelecomManager
 import android.telephony.PhoneStateListener
 import android.telephony.TelephonyCallback
 import android.telephony.TelephonyManager
@@ -52,3 +55,16 @@ fun phoneCallActive(context: Context): Flow<Boolean> = callbackFlow {
         awaitClose { telephony.listen(listener, PhoneStateListener.LISTEN_NONE) }
     }
 }.distinctUntilChanged()
+
+/**
+ * Starts a call through Telecom, which works with the screen locked (starting a dialer activity
+ * doesn't). False if the phone has no Telecom service; throws SecurityException without CALL_PHONE.
+ */
+fun startPhoneCall(context: Context, number: String): Boolean {
+    if (ContextCompat.checkSelfPermission(context, Manifest.permission.CALL_PHONE) != PackageManager.PERMISSION_GRANTED) {
+        throw SecurityException("CALL_PHONE not granted")
+    }
+    val telecom = context.getSystemService(TelecomManager::class.java) ?: return false
+    telecom.placeCall(Uri.fromParts("tel", number, null), Bundle())
+    return true
+}

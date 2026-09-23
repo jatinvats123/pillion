@@ -57,11 +57,25 @@ class BackendApi(private val baseUrl: String = BuildConfig.BACKEND_URL) {
         post("/ride/device-result", result, rideToken)
     }
 
-    private suspend fun post(path: String, body: JSONObject, rideToken: String? = null): JSONObject = withContext(Dispatchers.IO) {
+    /**
+     * Has the ride's agent speak [text] now through Agora's speak API (a safety alert). Short
+     * timeouts: the phone speaks it itself if this doesn't work quickly.
+     */
+    suspend fun say(rideToken: String, text: String, interrupt: Boolean) {
+        post("/ride/say", JSONObject().put("text", text).put("interrupt", interrupt), rideToken, connectTimeoutMs = 2_000, readTimeoutMs = 3_000)
+    }
+
+    private suspend fun post(
+        path: String,
+        body: JSONObject,
+        rideToken: String? = null,
+        connectTimeoutMs: Int = 10_000,
+        readTimeoutMs: Int = 30_000,
+    ): JSONObject = withContext(Dispatchers.IO) {
         val connection = (URL(baseUrl + path).openConnection() as HttpURLConnection).apply {
             requestMethod = "POST"
-            connectTimeout = 10_000
-            readTimeout = 30_000
+            connectTimeout = connectTimeoutMs
+            readTimeout = readTimeoutMs
             doOutput = true
             setRequestProperty("Content-Type", "application/json")
             rideToken?.let { setRequestProperty("Authorization", "Bearer $it") }

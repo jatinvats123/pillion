@@ -71,5 +71,5 @@ Write-Host "Pillion installed and launched."
 if (-not $NoLogcat) {
     & $adb -s $Serial logcat -c
     Write-Host "Following logs (uid=0 vol = your mic level, 0-255). Ctrl+C to stop."
-    & $adb -s $Serial logcat -v time -s VoiceSession:* RideViewModel:* RideService:* RideRepository:* DeviceActions:*
+    & $adb -s $Serial logcat -v time -s VoiceSession:* RideViewModel:* RideService:* RideRepository:* DeviceActions:* Safety:* SafetySensors:* SafetyAlarm:* SafetyAlert:* SafetyNotifications:* SmsSender:*
 }

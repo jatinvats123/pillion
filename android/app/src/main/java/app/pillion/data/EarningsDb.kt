@@ -15,7 +15,8 @@ import org.json.JSONObject
  *
  * Delivery apps have no API, so on first launch the history is filled with SEEDED DEMO DATA:
  * 14 days of plausible East Delhi trips (12–18 a day, ₹600–1200 a day), marked `source = 'seed'`,
- * plus two past safety alerts. Rides ended in Pillion are added on top as `source = 'live'`.
+ * plus two past safety alerts. Rides ended in Pillion and real safety events (Phase 3: crash
+ * detected/cancelled, SOS sent, manual SOS, fatigue reminder) are added on top as `source = 'live'`.
  */
 class EarningsDb(context: Context) : SQLiteOpenHelper(context.applicationContext, "earnings.db", null, 1) {
 
@@ -45,6 +46,15 @@ class EarningsDb(context: Context) : SQLiteOpenHelper(context.applicationContext
 
     fun addLiveTrip(startedAt: Long, endedAt: Long, area: String, earnedRupees: Int) {
         writableDatabase.insert("trips", null, trip(startedAt, endedAt, area, earnedRupees, source = "live"))
+    }
+
+    /** A real safety event (crash detected, SOS sent…), next to the seeded past alerts. Returns its id. */
+    fun addSafetyEvent(kind: String, note: String, at: Long = System.currentTimeMillis()): Long =
+        writableDatabase.insert("safety_alerts", null, alert(at, kind, note, source = "live"))
+
+    /** E.g. an SOS whose delivery reports came in after it was logged. */
+    fun updateSafetyNote(id: Long, note: String) {
+        writableDatabase.update("safety_alerts", ContentValues().apply { put("note", note) }, "id = ?", arrayOf(id.toString()))
     }
 
     /**
@@ -112,11 +122,11 @@ class EarningsDb(context: Context) : SQLiteOpenHelper(context.applicationContext
         put("source", source)
     }
 
-    private fun alert(at: Long, kind: String, note: String) = ContentValues().apply {
+    private fun alert(at: Long, kind: String, note: String, source: String = "seed") = ContentValues().apply {
         put("at", at)
         put("kind", kind)
         put("note", note)
-        put("source", "seed")
+        put("source", source)
     }
 
     private fun startOfDay(time: Long, daysAgo: Int = 0): Long = Calendar.getInstance().run {

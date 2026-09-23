@@ -13,7 +13,7 @@
     <string name="status_speaking">Speaking</string>
     <string name="status_reconnecting">Reconnecting</string>
     <string name="status_ended">Ended</string>
-    <string name="status_error">Error</string>
+    <string name="status_voice_offline">Voice offline</string>
 
     <string name="speaker_rider">You</string>
     <string name="speaker_pillion">Pillion</string>
@@ -42,5 +42,90 @@
 
     <string name="notification_channel_ride">Active ride</string>
     <string name="notification_ride_title">Ride active</string>
-    <string name="notification_ride_text">Pillion is listening</string>
+    <string name="notification_ride_text">Pillion is listening · crash detection on</string>
+    <string name="notification_channel_safety">Crash and SOS alerts</string>
+
+    <!-- Ride screen: safety -->
+    <string name="sos_button">SOS</string>
+    <string name="sos_button_description">SOS: text your emergency contacts your location after 5 seconds</string>
+    <string name="safety_button">Safety</string>
+    <string name="voice_offline_title">Pillion\'s voice is offline</string>
+    <string name="voice_offline_body">%1$s Crash detection and SOS still work.</string>
+    <string name="retry_voice">Retry voice</string>
+    <string name="gps_unavailable_title">No GPS signal</string>
+    <string name="gps_unavailable_body">Crash detection now needs a harder impact, and an SOS would send your last known location.</string>
+    <string name="safety_alert_active">A safety alert is on</string>
+    <string name="open">Open</string>
+    <string name="setup_title">Safety setup</string>
+    <string name="setup_no_contacts">Add an emergency contact, or SOS can\'t reach anyone.</string>
+    <string name="setup_sms">Allow SMS so the SOS can reach your contacts.</string>
+    <string name="setup_location">Allow location so crash detection knows you\'re riding and the SOS has your location.</string>
+    <string name="setup_notifications">Allow notifications so a crash alert can show on the lock screen.</string>
+    <string name="setup_full_screen">Allow full-screen alerts so a crash alert shows over the lock screen.</string>
+    <string name="setup_battery">Turn off battery optimisation so crash detection keeps running with the screen off.</string>
+    <string name="setup_battery_oem">On Realme, OPPO and OnePlus also: Settings → Battery → App battery management → Pillion → Allow background activity.</string>
+    <string name="setup_hindi_voice">Install the Hindi voice (Settings → Text-to-speech) so offline alerts speak Hindi.</string>
+    <string name="add">Add</string>
+    <string name="allow">Allow</string>
+    <string name="fix">Fix</string>
+    <string name="install">Install</string>
+
+    <!-- Debug builds only -->
+    <string name="debug_safety_title">DEBUG · Safety tests</string>
+    <string name="debug_simulate_crash">Simulate crash (synthetic trace)</string>
+    <string name="debug_simulate_needs_ride">Start a ride first: the simulated trace goes through the ride\'s detector.</string>
+    <string name="debug_record">Record sensors to CSV</string>
+    <string name="debug_demo">Demo mode: no speed gate, 2.5 g (next ride)</string>
+    <string name="debug_fatigue">Break reminder after 2 min (next ride)</string>
+
+    <!-- Alert screen -->
+    <string name="alert_crash_title">Crash detected</string>
+    <string name="alert_crash_question">क्या आप ठीक हैं? · Are you OK?</string>
+    <string name="alert_manual_title">Sending SOS</string>
+    <string name="alert_countdown_body">At zero, your emergency contacts get an SMS with your location.</string>
+    <string name="alert_voice_hint">Or say “मैं ठीक हूँ” / “I\'m fine”</string>
+    <string name="alert_im_ok">I\'M OK\nमैं ठीक हूँ</string>
+    <string name="alert_cancel_sos">CANCEL SOS\nरद्द करें</string>
+    <string name="alert_im_ok_now">I\'M OK NOW\nअब मैं ठीक हूँ</string>
+    <string name="alert_send_now">Send SOS now</string>
+    <string name="alert_sos_sent_title">SOS sent</string>
+    <string name="alert_sos_not_sent_title">SOS not sent</string>
+    <string name="alert_problem_no_contacts">No emergency contact: the SOS can\'t be sent. Call 112.</string>
+    <string name="alert_problem_no_sms">SMS permission is off: the SOS can\'t be sent. Call 112.</string>
+    <string name="alert_problem_nothing_sent">The SOS SMS didn\'t go out (no signal?). Pillion keeps trying. Call 112.</string>
+    <string name="alert_next_update">Next location update in %1$s (%2$d of %3$d sent)</string>
+    <string name="alert_updates_done">Location updates done</string>
+    <string name="alert_call_112">Call 112</string>
+    <string name="alert_call_contact">Call %1$s</string>
+    <string name="alert_notification_crash_text">Your contacts get an SOS unless you tap I\'M OK.</string>
+    <string name="alert_notification_manual_text">Tap CANCEL SOS to stop it.</string>
+    <string name="alert_notification_sent_text">Your contacts have your location. Tap I\'M OK NOW when you\'re safe.</string>
+    <string name="alert_notification_not_sent_text">Call 112. Tap to see why.</string>
+    <string name="delivery_sending">Sending…</string>
+    <string name="delivery_sent">Sent</string>
+    <string name="delivery_delivered">Delivered</string>
+    <string name="delivery_not_delivered">Not delivered</string>
+    <string name="delivery_failed">Failed</string>
+    <plurals name="alert_countdown_description">
+        <item quantity="one">SOS in %1$d second</item>
+        <item quantity="other">SOS in %1$d seconds</item>
+    </plurals>
+
+    <!-- Safety settings -->
+    <string name="back">Back</string>
+    <string name="safety_title">Safety</string>
+    <string name="safety_name_label">Your name (used in the SOS message)</string>
+    <string name="safety_contacts_title">Emergency contacts</string>
+    <string name="safety_contacts_body">Up to 3. If Pillion detects a crash and you don\'t answer, or you ask for help, they get an SMS with your location. Stored only on this phone.</string>
+    <string name="safety_add_contact">Add from contacts</string>
+    <string name="safety_contacts_full">3 contacts is the maximum.</string>
+    <string name="safety_contact_exists">That number is already on the list.</string>
+    <string name="safety_contact_no_number">Couldn\'t read a phone number for that contact.</string>
+    <string name="safety_first_contact">Texted and called first</string>
+    <string name="move_up">Up</string>
+    <string name="move_down">Down</string>
+    <string name="remove">Remove</string>
+    <string name="move_up_description">Move %1$s up</string>
+    <string name="move_down_description">Move %1$s down</string>
+    <string name="remove_description">Remove %1$s</string>
 </resources>

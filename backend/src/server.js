@@ -77,6 +77,30 @@ app.post(
   }),
 );
 
+// Safety alerts from the phone ("Aap theek ho?", "SOS sent to 2 contacts"): the agent speaks the
+// text now through Agora's speak API. INTERRUPT cuts off whatever it was saying; not interruptable,
+// so road noise can't cut the alert short. The phone speaks it itself if this fails or is slow.
+app.post(
+  '/ride/say',
+  withRide(async (ride, req, res) => {
+    const text = String(req.body?.text ?? '').trim();
+    // Agora's limit is 512 bytes (Devanagari is 3 bytes a character).
+    if (!text || Buffer.byteLength(text) > 500 || !ride.session) {
+      return res.status(400).json({ error: 'text (max 500 bytes) and a started ride are required' });
+    }
+    const priority = req.body?.interrupt === false ? 'APPEND' : 'INTERRUPT';
+    const startedAt = Date.now();
+    try {
+      await ride.session.say(text, { priority, interruptable: false });
+      console.log(`[say] ride=${ride.channel.slice(-6)} ${priority} in ${Date.now() - startedAt} ms: "${text.slice(0, 60)}"`);
+      res.json({ ok: true });
+    } catch (error) {
+      console.warn(`[say] failed: ${describe(error)}`);
+      res.status(424).json({ error: 'say_failed' });
+    }
+  }),
+);
+
 // Testing without speaking: sends text into the ride's LLM as if the rider had said it.
 app.post(
   '/debug/think',

@@ -25,8 +25,24 @@
     <uses-permission android:name="android.permission.SEND_SMS" />
     <uses-permission android:name="android.permission.CALL_PHONE" />
     <uses-permission android:name="android.permission.READ_PHONE_STATE" />
+    <!-- Crash alert: shown over the lock screen (Android 14+ lets the rider turn this off; the
+         app then shows a setup card), vibration, and a CPU kept awake only while an alert or SOS
+         is running (time-limited). -->
+    <uses-permission android:name="android.permission.USE_FULL_SCREEN_INTENT" />
+    <uses-permission android:name="android.permission.VIBRATE" />
+    <uses-permission android:name="android.permission.WAKE_LOCK" />
+    <!-- Crash detection must keep running with the screen locked; the setup card asks for the exemption. -->
+    <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
+
+    <!-- On-device text-to-speech (safety alerts without internet) needs to see the TTS engine. -->
+    <queries>
+        <intent>
+            <action android:name="android.intent.action.TTS_SERVICE" />
+        </intent>
+    </queries>
 
     <application
+        android:name=".PillionApp"
         android:allowBackup="false"
         android:icon="@mipmap/ic_launcher"
         android:label="@string/app_name"
@@ -44,10 +60,23 @@
             </intent-filter>
         </activity>
 
+        <!-- Crash / SOS alert: over the lock screen, in its own task so nothing else of the app
+             shows there. -->
+        <activity
+            android:name=".ui.SafetyAlertActivity"
+            android:excludeFromRecents="true"
+            android:exported="false"
+            android:launchMode="singleInstance"
+            android:taskAffinity="app.pillion.alert" />
+
         <service
             android:name=".ride.RideService"
             android:exported="false"
             android:foregroundServiceType="microphone|location" />
+
+        <receiver
+            android:name=".safety.SafetyActionReceiver"
+            android:exported="false" />
     </application>
 
 </manifest>

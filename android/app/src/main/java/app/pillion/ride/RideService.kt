@@ -17,15 +17,26 @@ import androidx.core.app.ServiceCompat
 import androidx.core.content.ContextCompat
 import app.pillion.MainActivity
 import app.pillion.R
+import app.pillion.pillion
+import app.pillion.safety.SafetySensors
 
 /**
- * Microphone foreground service for the length of a ride. Without it Android silences the mic
- * as soon as the screen locks or the app leaves the foreground — i.e. whenever the rider rides.
- * The voice session itself lives in the ViewModel; this only keeps the app allowed to listen.
+ * Foreground service for the length of a ride. Without it Android silences the mic as soon as the
+ * screen locks or the app leaves the foreground — i.e. whenever the rider rides. It also runs the
+ * crash-detection sensors ([SafetySensors]), so detection keeps going with the screen locked and
+ * without the voice connection. The voice session itself lives in the ViewModel.
  */
 class RideService : Service() {
 
+    private var sensors: SafetySensors? = null
+
     override fun onBind(intent: Intent?): IBinder? = null
+
+    override fun onDestroy() {
+        sensors?.stop()
+        sensors = null
+        super.onDestroy()
+    }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         createChannel()
@@ -49,9 +60,12 @@ class RideService : Service() {
             ServiceCompat.startForeground(this, NOTIFICATION_ID, notification, serviceTypes())
         } catch (error: Exception) {
             // E.g. mic permission revoked; the ride still works while the app is in the foreground.
+            // (A started service that never goes foreground would be killed with an error.)
             Log.w(TAG, "Could not start ride foreground service", error)
             stopSelf()
+            return START_NOT_STICKY
         }
+        if (sensors == null) sensors = SafetySensors(this, pillion.safety).also { it.start() }
         return START_NOT_STICKY
     }
 

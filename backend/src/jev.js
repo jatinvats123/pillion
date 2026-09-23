@@ -53,6 +53,7 @@ const INTENT_QUESTION = {
     sms_customer: 'Send a text message to the customer',
     call_customer: 'Phone the customer',
     earnings: 'Tell the rider their trips or money earned (today, yesterday, this week)',
+    sos: 'Emergency: the rider asks for SOS or help, had an accident, is hurt or needs an ambulance',
     chat: 'Anything else: small talk, general questions, a yes/no reply, unclear or cut-off speech',
   },
 };

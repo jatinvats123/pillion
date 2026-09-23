@@ -44,6 +44,15 @@ class RiderLocation(context: Context) {
         return fresh ?: lastKnown(providers, maxAgeMs = STALE_OK_MS)
     }
 
+    /** The newest fix any provider still remembers, however old (for the SOS, which states its age). */
+    @SuppressLint("MissingPermission")
+    fun newestKnown(): Location? {
+        if (!hasPermission()) return null
+        return manager.allProviders
+            .mapNotNull { runCatching { manager.getLastKnownLocation(it) }.getOrNull() }
+            .maxByOrNull { it.elapsedRealtimeNanos }
+    }
+
     fun ageMs(location: Location): Long = (SystemClock.elapsedRealtimeNanos() - location.elapsedRealtimeNanos) / 1_000_000
 
     private fun enabledProviders(): List<String> = buildList {
