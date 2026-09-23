@@ -30,6 +30,7 @@ export const config = {
     sttLanguage: env('SARVAM_STT_LANGUAGE', 'unknown'),
     ttsLanguage: env('SARVAM_TTS_LANGUAGE', 'hi-IN'),
     ttsSpeaker: env('SARVAM_TTS_SPEAKER', 'priya'),
+    ttsPace: Number(env('SARVAM_TTS_PACE', '1.08')),
   },
   managed: {
     deepgramLanguage: env('DEEPGRAM_LANGUAGE', 'multi'),

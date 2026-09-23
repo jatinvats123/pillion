@@ -74,6 +74,7 @@ function buildAgent() {
         key: config.sarvam.apiKey,
         speaker: config.sarvam.ttsSpeaker,
         targetLanguageCode: config.sarvam.ttsLanguage,
+        pace: config.sarvam.ttsPace,
       }),
     );
 }
