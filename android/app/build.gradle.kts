@@ -15,6 +15,11 @@ val backendUrl: String = providers.gradleProperty("PILLION_BACKEND_URL").orNull
     ?: localProperties.getProperty("PILLION_BACKEND_URL")
     ?: "http://10.0.2.2:3000"
 
+// Debug builds: the seeded order's customer number for SMS/call tests, kept out of git in
+// android/local.properties. Digits and + only.
+val testCustomerPhone: String = localProperties.getProperty("PILLION_TEST_CUSTOMER_PHONE").orEmpty()
+    .filter { it.isDigit() || it == '+' }
+
 android {
     namespace = "app.pillion"
     compileSdk = 36
@@ -30,7 +35,11 @@ android {
     }
 
     buildTypes {
+        debug {
+            buildConfigField("String", "TEST_CUSTOMER_PHONE", "\"$testCustomerPhone\"")
+        }
         release {
+            buildConfigField("String", "TEST_CUSTOMER_PHONE", "\"\"")
             isMinifyEnabled = false
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
         }

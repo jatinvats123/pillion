@@ -6,7 +6,9 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import app.pillion.BuildConfig
 import app.pillion.data.BackendException
+import app.pillion.data.Order
 import app.pillion.data.RideCredentials
+import app.pillion.device.RidePermission
 import app.pillion.ride.RideRepository
 import app.pillion.ride.RideService
 import app.pillion.voice.AgentState
@@ -18,11 +20,13 @@ import java.io.IOException
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
@@ -33,6 +37,8 @@ data class RideUiState(
     val status: RideStatus = RideStatus.Idle,
     val transcript: List<TranscriptLine> = emptyList(),
     val errorMessage: String? = null,
+    /** An action failed for lack of this permission; the screen offers to grant it. */
+    val permissionNeeded: RidePermission? = null,
 ) {
     val rideActive: Boolean
         get() = status in setOf(
@@ -55,8 +61,15 @@ class RideViewModel(application: Application) : AndroidViewModel(application) {
     private val repository = RideRepository(application)
     private val voice = repository.voice
     private val phase = MutableStateFlow<Phase>(Phase.Idle)
+    private val permissionNeeded = MutableStateFlow<RidePermission?>(null)
     private var ride: RideCredentials? = null
+    private var rideStartedAt = 0L
+    private var rideServices: Job? = null
     private var endRequested = false
+
+    private val _testOrder = MutableStateFlow<Order>(repository.orders.activeOrder())
+    /** Debug builds: the seeded order, whose customer number can point at a test phone. */
+    val testOrder: StateFlow<Order> = _testOrder.asStateFlow()
 
     val uiState: StateFlow<RideUiState> = combine(
         phase, voice.connection, voice.agentState, voice.agentPresent, voice.transcript,
@@ -66,9 +79,14 @@ class RideViewModel(application: Application) : AndroidViewModel(application) {
             transcript = transcript,
             errorMessage = (phase as? Phase.Failed)?.message,
         )
+    }.combine(permissionNeeded) { state, permission ->
+        state.copy(permissionNeeded = permission)
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), RideUiState())
 
     init {
+        viewModelScope.launch {
+            repository.permissionNeeded.collect { permissionNeeded.value = it }
+        }
         viewModelScope.launch {
             voice.events.collect { event ->
                 if (phase.value != Phase.Active) return@collect
@@ -94,8 +112,11 @@ class RideViewModel(application: Application) : AndroidViewModel(application) {
         phase.value = Phase.Starting
         viewModelScope.launch {
             try {
-                ride = repository.start()
+                val started = repository.start()
+                ride = started
+                rideStartedAt = System.currentTimeMillis()
                 phase.value = Phase.Active
+                rideServices = viewModelScope.launch { serveRide(started) }
                 if (endRequested) finishRide() else RideService.start(getApplication())
             } catch (error: TimeoutCancellationException) {
                 onStartFailed(error)
@@ -128,12 +149,37 @@ class RideViewModel(application: Application) : AndroidViewModel(application) {
         if (phase.value is Phase.Failed) phase.value = Phase.Idle
     }
 
+    fun dismissPermission() {
+        permissionNeeded.value = null
+    }
+
+    fun setTestCustomerPhone(number: String) {
+        repository.orders.setCustomerPhone(number)
+        _testOrder.value = repository.orders.activeOrder()
+    }
+
+    private suspend fun serveRide(started: RideCredentials) {
+        try {
+            repository.serveRide(started)
+        } catch (error: CancellationException) {
+            throw error
+        } catch (error: Exception) {
+            // Voice keeps working; only the phone-side actions stop.
+            Log.e(TAG, "Ride actions stopped", error)
+        }
+    }
+
     private fun finishRide(failure: String? = null) {
         val current = ride ?: return
         ride = null
+        rideServices?.cancel()
+        rideServices = null
         phase.value = Phase.Ending
         RideService.stop(getApplication())
+        val startedAt = rideStartedAt
         viewModelScope.launch {
+            runCatching { repository.recordTrip(startedAt, System.currentTimeMillis()) }
+                .onFailure { Log.w(TAG, "Trip not recorded", it) }
             runCatching { repository.end(current.agentId) }
                 .onFailure { Log.w(TAG, "Agent stop failed; it will idle-stop on its own", it) }
             phase.value = failure?.let { Phase.Failed(it) } ?: Phase.Ended

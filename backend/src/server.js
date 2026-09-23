@@ -1,6 +1,9 @@
 import express from 'express';
-import { config, validateConfig } from './config.js';
+import { config, configWarnings, mapsConfigured, validateConfig } from './config.js';
 import { activeAgentCount, startRide, stopAllRides, stopRide } from './agora.js';
+import { jevEnabled } from './jev.js';
+import { answerFromPhone, rideForToken } from './rides.js';
+import { onRiderTurn, runTool } from './tools.js';
 
 try {
   validateConfig();
@@ -8,6 +11,7 @@ try {
   console.error(error.message);
   process.exit(1);
 }
+for (const warning of configWarnings()) console.warn(`[config] ${warning}`);
 
 const app = express();
 app.use(express.json({ limit: '10kb' }));
@@ -17,15 +21,93 @@ app.get('/health', (_req, res) => {
     ok: true,
     voiceStack: config.voiceStack,
     llm: config.llm.provider === 'openai' ? `managed ${config.llm.openaiModel}` : config.gemini.model,
+    tools: Boolean(config.publicBaseUrl),
+    jev: jevEnabled(),
+    maps: mapsConfigured() ? config.maps.provider : false,
     activeAgents: activeAgentCount(),
   });
 });
 
-app.post('/agent/start', async (_req, res) => {
+// The tunnel is there for Agora's tool calls. Starting and stopping agents (which bills the Agora
+// account) stays local: requests forwarded by Cloudflare carry cf-ray / cf-connecting-ip.
+function localOnly(req, res, next) {
+  const viaTunnel = Boolean(req.get('cf-ray') || req.get('cf-connecting-ip'));
+  if (viaTunnel && !config.allowPublicRideStart) {
+    return res.status(403).json({ error: 'Not available through the public tunnel.' });
+  }
+  return next();
+}
+
+// Every ride-scoped call (Agora's tool calls and the rider app's own) carries the ride's secret.
+function withRide(handler) {
+  return async (req, res) => {
+    const token = req.get('authorization')?.replace(/^Bearer\s+/i, '');
+    const ride = rideForToken(token);
+    if (!ride) return res.status(401).json({ error: 'unknown_or_ended_ride' });
+    return handler(ride, req, res);
+  };
+}
+
+// Agora ConvoAI custom tools: the LLM decided to call `name` with these arguments.
+app.post(
+  '/tools/:name',
+  withRide(async (ride, req, res) => {
+    const { tool_call_id: _id, ...args } = req.body ?? {};
+    const { status, body } = await runTool(ride, req.params.name, args);
+    res.status(status).json(body);
+  }),
+);
+
+// The app posts each final rider transcript: Jev reads it while the LLM does.
+app.post(
+  '/ride/turn',
+  withRide((ride, req, res) => {
+    const text = String(req.body?.text ?? '').trim().slice(0, 500);
+    if (text) onRiderTurn(ride, { turnId: Number(req.body?.turnId ?? -1), text });
+    res.status(202).json({ ok: true });
+  }),
+);
+
+// The phone's answer to a request relayed over RTM (GPS fix, earnings, SMS sent, call placed…).
+app.post(
+  '/ride/device-result',
+  withRide((ride, req, res) => {
+    const known = answerFromPhone(ride, req.body ?? {});
+    res.status(known ? 200 : 410).json({ ok: known });
+  }),
+);
+
+// Testing without speaking: sends text into the ride's LLM as if the rider had said it.
+app.post(
+  '/debug/think',
+  withRide(async (ride, req, res) => {
+    const text = String(req.body?.text ?? '').trim();
+    if (!text || !ride.session) return res.status(400).json({ error: 'text and a started ride are required' });
+    try {
+      await ride.session.think(text);
+      res.json({ ok: true });
+    } catch (error) {
+      res.status(502).json({ error: describe(error) });
+    }
+  }),
+);
+
+app.get(
+  '/debug/history',
+  withRide(async (ride, _req, res) => {
+    try {
+      res.json(await ride.session.getHistory());
+    } catch (error) {
+      res.status(502).json({ error: describe(error) });
+    }
+  }),
+);
+
+app.post('/agent/start', localOnly, async (_req, res) => {
   const startedAt = Date.now();
   try {
     const ride = await startRide();
-    console.log(`[start] agent=${ride.agentId} channel=${ride.channel} uid=${ride.uid} in ${Date.now() - startedAt} ms`);
+    console.log(`[start] agent=${ride.agentId} channel=${ride.channel} uid=${ride.uid} in ${Date.now() - startedAt} ms (jev ${jevEnabled() ? 'on' : 'off'})`);
     res.json(ride);
   } catch (error) {
     console.error(`[start] failed: ${describe(error)}`);
@@ -33,7 +115,7 @@ app.post('/agent/start', async (_req, res) => {
   }
 });
 
-app.post('/agent/stop', async (req, res) => {
+app.post('/agent/stop', localOnly, async (req, res) => {
   const agentId = req.body?.agentId;
   if (typeof agentId !== 'string' || !agentId.trim()) {
     return res.status(400).json({ error: 'agentId is required.' });
@@ -48,10 +130,17 @@ app.post('/agent/stop', async (req, res) => {
   }
 });
 
-const secrets = [config.agora.appCertificate, config.gemini.apiKey, config.sarvam.apiKey].filter(Boolean);
+const secrets = [
+  config.agora.appCertificate,
+  config.gemini.apiKey,
+  config.sarvam.apiKey,
+  config.jev.apiKey,
+  config.maps.geoapifyApiKey,
+  config.maps.googleApiKey,
+].filter(Boolean);
 
 // Debug app builds mirror their per-turn latency breakdown here (ASR / LLM / TTS from Agora metrics).
-app.post('/debug/latency', (req, res) => {
+app.post('/debug/latency', localOnly, (req, res) => {
   const line = String(req.body?.line ?? '').slice(0, 300);
   if (line) console.log(`[latency] ${line}`);
   res.json({ ok: true });

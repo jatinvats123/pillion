@@ -44,7 +44,8 @@ Write-Host "Phone: $model (Android $android) [$Serial]"
 # 2. Backend check + reverse port forward.
 try {
     $health = Invoke-RestMethod "http://127.0.0.1:$Port/health" -TimeoutSec 3
-    Write-Host "Backend OK: voice=$($health.voiceStack) llm=$($health.llmModel) activeAgents=$($health.activeAgents)"
+    Write-Host "Backend OK: voice=$($health.voiceStack) llm=$($health.llm) tools=$($health.tools) jev=$($health.jev) maps=$($health.maps) activeAgents=$($health.activeAgents)"
+    if (-not $health.tools) { Write-Warning 'PUBLIC_BASE_URL is not set: rides will not start. Run cloudflared and set it in backend/.env.' }
 } catch {
     Write-Warning "Backend not reachable on http://127.0.0.1:$Port - start it with: cd backend; npm start"
 }
@@ -70,5 +71,5 @@ Write-Host "Pillion installed and launched."
 if (-not $NoLogcat) {
     & $adb -s $Serial logcat -c
     Write-Host "Following logs (uid=0 vol = your mic level, 0-255). Ctrl+C to stop."
-    & $adb -s $Serial logcat -v time -s VoiceSession:* RideViewModel:* RideService:*
+    & $adb -s $Serial logcat -v time -s VoiceSession:* RideViewModel:* RideService:* RideRepository:* DeviceActions:*
 }

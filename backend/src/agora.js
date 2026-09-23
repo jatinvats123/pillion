@@ -12,7 +12,9 @@ import {
   generateConvoAIToken,
 } from 'agora-agents';
 import { config } from './config.js';
-import { FAILURE_MESSAGE, GREETING, SYSTEM_PROMPT } from './prompt.js';
+import { FAILURE_MESSAGE, FILLER_PHRASES, FILLER_PROMPT, GREETING, SYSTEM_PROMPT } from './prompt.js';
+import { createRide, endRide, rideForAgent } from './rides.js';
+import { toolDefinitions } from './tools.js';
 
 // Created lazily so config validation can report problems before the SDK does.
 let client;
@@ -28,7 +30,7 @@ const activeAgents = new Set();
 
 export const activeAgentCount = () => activeAgents.size;
 
-function buildAgent() {
+function buildAgent(ride) {
   const agent = new Agent({
     client: agoraClient(),
     turnDetection: {
@@ -59,7 +61,21 @@ function buildAgent() {
       // Tuned for agent conversations and network resilience (riders are on patchy mobile data).
       audio_scenario: 'aiserver',
     },
-  }).withLlm(buildLlm());
+    // Agora has no tool-only filler trigger, only "LLM silent for N ms". Chat replies start in
+    // 0.5–1.5 s; tool turns (LLM → tool → LLM) take 2.5 s+, so 1.5 s ≈ fillers on tool turns only.
+    fillerWords: {
+      enable: true,
+      trigger: { mode: 'fixed_time', fixed_time_config: { response_wait_ms: config.fillerWaitMs } },
+      content: {
+        // Agora-hosted generation keeps the filler in the rider's language; static is the fallback.
+        mode: 'generated',
+        generated_config: { prompt: FILLER_PROMPT, fallback_strategy: 'static' },
+        static_config: { phrases: FILLER_PHRASES, selection_rule: 'shuffle' },
+      },
+    },
+  })
+    .withLlm(buildLlm(ride))
+    .withTools(true);
 
   if (config.voiceStack === 'managed') {
     return agent
@@ -79,12 +95,15 @@ function buildAgent() {
     );
 }
 
-function buildLlm() {
+function buildLlm(ride) {
   const common = {
     systemMessages: [{ role: 'system', content: SYSTEM_PROMPT }],
     greetingMessage: GREETING,
     failureMessage: FAILURE_MESSAGE,
     maxHistory: 12,
+    tools: toolDefinitions(),
+    // Agora sends this as the Authorization header of every tool call; it identifies the ride.
+    templateVariables: { tool_auth: `Bearer ${ride.token}` },
   };
   const { provider, maxTokens, temperature, openaiModel } = config.llm;
 
@@ -109,6 +128,9 @@ function buildLlm() {
  * The agent only listens to this rider's uid and leaves 30 s after the rider disconnects.
  */
 export async function startRide() {
+  if (!config.publicBaseUrl) {
+    throw new Error('PUBLIC_BASE_URL is not set: start cloudflared and put its https URL in backend/.env (tools need it).');
+  }
   const channel = `pillion-${Date.now()}-${randomInt(100_000, 1_000_000)}`;
   const uid = randomInt(100_000, 900_000);
 
@@ -121,7 +143,8 @@ export async function startRide() {
     tokenExpire: config.tokenExpirySeconds,
   });
 
-  const session = buildAgent().createSession({
+  const ride = createRide({ channel, uid });
+  const session = buildAgent(ride).createSession({
     name: channel,
     channel,
     agentUid: config.agora.agentUid,
@@ -130,7 +153,15 @@ export async function startRide() {
     expiresIn: config.tokenExpirySeconds,
   });
 
-  const agentId = await session.start();
+  let agentId;
+  try {
+    agentId = await session.start();
+  } catch (error) {
+    endRide(ride);
+    throw error;
+  }
+  ride.agentId = agentId;
+  ride.session = session;
   activeAgents.add(agentId);
 
   return {
@@ -140,6 +171,8 @@ export async function startRide() {
     uid,
     agentUid: Number(config.agora.agentUid),
     agentId,
+    // Authenticates the app's own calls (transcripts, device results) for this ride.
+    rideToken: ride.token,
   };
 }
 
@@ -147,6 +180,7 @@ export async function startRide() {
 export async function stopRide(agentId) {
   await agoraClient().stopAgent(agentId);
   activeAgents.delete(agentId);
+  endRide(rideForAgent(agentId));
 }
 
 export async function stopAllRides() {

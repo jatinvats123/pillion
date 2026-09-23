@@ -1,11 +1,13 @@
 package app.pillion.ride
 
+import android.Manifest
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
 import android.app.Service
 import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.content.pm.ServiceInfo
 import android.os.Build
 import android.os.IBinder
@@ -44,18 +46,23 @@ class RideService : Service() {
             .build()
 
         try {
-            ServiceCompat.startForeground(
-                this,
-                NOTIFICATION_ID,
-                notification,
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE else 0,
-            )
+            ServiceCompat.startForeground(this, NOTIFICATION_ID, notification, serviceTypes())
         } catch (error: Exception) {
             // E.g. mic permission revoked; the ride still works while the app is in the foreground.
             Log.w(TAG, "Could not start ride foreground service", error)
             stopSelf()
         }
         return START_NOT_STICKY
+    }
+
+    // Location only when granted: Android 14+ refuses a location-type service without the permission.
+    // With it, tools can read GPS while the phone is locked.
+    private fun serviceTypes(): Int {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) return 0
+        val hasLocation = listOf(Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION)
+            .any { ContextCompat.checkSelfPermission(this, it) == PackageManager.PERMISSION_GRANTED }
+        return ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE or
+            (if (hasLocation) ServiceInfo.FOREGROUND_SERVICE_TYPE_LOCATION else 0)
     }
 
     private fun createChannel() {

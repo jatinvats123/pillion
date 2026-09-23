@@ -28,6 +28,18 @@
     <string name="open_settings">Open settings</string>
     <string name="dismiss">Dismiss</string>
 
+    <string name="permission_location_title">Location is off for Pillion</string>
+    <string name="permission_location_body">Pillion needs your location for the next-drop ETA and nearby places.</string>
+    <string name="permission_sms_title">SMS permission is off</string>
+    <string name="permission_sms_body">Pillion needs it to text your customer after you say yes.</string>
+    <string name="permission_call_title">Phone permission is off</string>
+    <string name="permission_call_body">Pillion needs it to call your customer after you say yes, and to go quiet during calls.</string>
+    <string name="permission_allow">Allow</string>
+
+    <string name="test_order_title">Test order (seeded)</string>
+    <string name="test_order_phone">Customer number for SMS/call tests</string>
+    <string name="save">Save</string>
+
     <string name="notification_channel_ride">Active ride</string>
     <string name="notification_ride_title">Ride active</string>
     <string name="notification_ride_text">Pillion is listening</string>

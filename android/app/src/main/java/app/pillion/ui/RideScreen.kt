@@ -28,11 +28,13 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -53,13 +55,17 @@ import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LifecycleEventEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
+import app.pillion.BuildConfig
 import app.pillion.R
+import app.pillion.data.Order
+import app.pillion.device.RidePermission
 import app.pillion.voice.Speaker
 import app.pillion.voice.TranscriptLine
 
@@ -69,6 +75,7 @@ private enum class MicPrompt { None, Rationale, Denied }
 @Composable
 fun RideRoute(viewModel: RideViewModel = viewModel()) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
+    val testOrder by viewModel.testOrder.collectAsStateWithLifecycle()
     val context = LocalContext.current
     val activity = LocalActivity.current
     var micPrompt by rememberSaveable { mutableStateOf(MicPrompt.None) }
@@ -89,6 +96,15 @@ fun RideRoute(viewModel: RideViewModel = viewModel()) {
             val canAskAgain = activity?.shouldShowRequestPermissionRationale(Manifest.permission.RECORD_AUDIO) == true
             micPrompt = if (canAskAgain) MicPrompt.Rationale else MicPrompt.Denied
         }
+    }
+
+    // Asked again from the permission card after an action failed. If Android no longer shows the
+    // dialog ("Don't ask again"), only Settings can fix it.
+    val actionPermissionLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestMultiplePermissions()
+    ) { results ->
+        if (results.values.none { it }) context.openAppSettings()
+        viewModel.dismissPermission()
     }
 
     // Returning from Settings with the mic now allowed clears the prompt.
@@ -112,6 +128,10 @@ fun RideRoute(viewModel: RideViewModel = viewModel()) {
         onOpenSettings = { context.openAppSettings() },
         onDismissMicPrompt = { micPrompt = MicPrompt.None },
         onDismissError = viewModel::dismissError,
+        onGrantPermission = { actionPermissionLauncher.launch(it.manifestNames) },
+        onDismissPermission = viewModel::dismissPermission,
+        testOrder = testOrder.takeIf { BuildConfig.DEBUG },
+        onSaveTestPhone = viewModel::setTestCustomerPhone,
     )
 }
 
@@ -125,6 +145,10 @@ private fun RideScreen(
     onOpenSettings: () -> Unit,
     onDismissMicPrompt: () -> Unit,
     onDismissError: () -> Unit,
+    onGrantPermission: (RidePermission) -> Unit,
+    onDismissPermission: () -> Unit,
+    testOrder: Order?,
+    onSaveTestPhone: (String) -> Unit,
 ) {
     // Surface supplies the theme's content colour; bare Text would otherwise default to black.
     Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
@@ -164,6 +188,24 @@ private fun RideScreen(
                     isError = true,
                 )
             }
+
+            state.permissionNeeded?.let { permission ->
+                val (title, body) = when (permission) {
+                    RidePermission.Location -> R.string.permission_location_title to R.string.permission_location_body
+                    RidePermission.Sms -> R.string.permission_sms_title to R.string.permission_sms_body
+                    RidePermission.Call -> R.string.permission_call_title to R.string.permission_call_body
+                }
+                MessageCard(
+                    title = stringResource(title),
+                    body = stringResource(body),
+                    actionLabel = stringResource(R.string.permission_allow),
+                    onAction = { onGrantPermission(permission) },
+                    onDismiss = onDismissPermission,
+                    isError = true,
+                )
+            }
+
+            if (testOrder != null && !state.rideActive) TestOrderCard(testOrder, onSaveTestPhone)
 
             Transcript(lines = state.transcript, modifier = Modifier.weight(1f))
 
@@ -260,6 +302,10 @@ private fun Transcript(lines: List<TranscriptLine>, modifier: Modifier = Modifie
 
 @Composable
 private fun TranscriptBubble(line: TranscriptLine) {
+    if (line.speaker == Speaker.Action) {
+        ActionLine(line)
+        return
+    }
     val isRider = line.speaker == Speaker.Rider
     Column(
         modifier = Modifier.fillMaxWidth(),
@@ -285,6 +331,52 @@ private fun TranscriptBubble(line: TranscriptLine) {
                 .padding(horizontal = 14.dp, vertical = 10.dp)
                 .alpha(if (line.isFinal) 1f else 0.7f),
         )
+    }
+}
+
+/** Something Pillion did ("✓ SMS sent to Rahul"): a compact line, not a speech bubble. */
+@Composable
+private fun ActionLine(line: TranscriptLine) {
+    Text(
+        text = line.text,
+        style = MaterialTheme.typography.titleSmall,
+        fontWeight = FontWeight.SemiBold,
+        color = if (line.failed) MaterialTheme.colorScheme.error else Color(0xFF4ADE80),
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 4.dp, vertical = 2.dp),
+    )
+}
+
+/** Debug builds: the seeded order, with its customer number editable so SMS/call tests reach you. */
+@Composable
+private fun TestOrderCard(order: Order, onSavePhone: (String) -> Unit) {
+    var phone by rememberSaveable(order.customerPhone) { mutableStateOf(order.customerPhone) }
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
+    ) {
+        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text(
+                stringResource(R.string.test_order_title),
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.SemiBold,
+            )
+            Text("${order.customerName} · ${order.dropAddress}", style = MaterialTheme.typography.bodyMedium)
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedTextField(
+                    value = phone,
+                    onValueChange = { phone = it },
+                    label = { Text(stringResource(R.string.test_order_phone)) },
+                    singleLine = true,
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone),
+                    modifier = Modifier.weight(1f),
+                )
+                TextButton(onClick = { onSavePhone(phone) }, enabled = phone != order.customerPhone) {
+                    Text(stringResource(R.string.save))
+                }
+            }
+        }
     }
 }
 
@@ -352,10 +444,13 @@ private fun MessageCard(
 }
 
 /**
- * Nice-to-have: Bluetooth (earphone routing on Android 12+) and notifications (ride indicator).
- * Already-decided permissions return immediately without a dialog.
+ * Asked once before riding, since the rider can't tap dialogs on the road: location (ETA, nearby
+ * places), SMS and phone (message/call the customer, pause Pillion during calls), Bluetooth
+ * (earphone routing on Android 12+) and notifications (ride indicator). Any can be refused; the
+ * action that needs it then says so and shows a card. Already-decided ones return without a dialog.
  */
 private fun optionalRidePermissions(): Array<String> = buildList {
+    RidePermission.entries.forEach { addAll(it.manifestNames) }
     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) add(Manifest.permission.BLUETOOTH_CONNECT)
     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) add(Manifest.permission.POST_NOTIFICATIONS)
 }.toTypedArray()

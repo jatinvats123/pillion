@@ -17,6 +17,8 @@ data class RideCredentials(
     val uid: Int,
     val agentUid: Int,
     val agentId: String,
+    /** Authenticates this ride's own calls to the backend (transcripts, device results). */
+    val rideToken: String,
 )
 
 class BackendException(message: String) : IOException(message)
@@ -33,6 +35,7 @@ class BackendApi(private val baseUrl: String = BuildConfig.BACKEND_URL) {
             uid = json.getInt("uid"),
             agentUid = json.getInt("agentUid"),
             agentId = json.getString("agentId"),
+            rideToken = json.getString("rideToken"),
         )
     }
 
@@ -44,13 +47,24 @@ class BackendApi(private val baseUrl: String = BuildConfig.BACKEND_URL) {
         post("/debug/latency", JSONObject().put("line", line))
     }
 
-    private suspend fun post(path: String, body: JSONObject): JSONObject = withContext(Dispatchers.IO) {
+    /** A final rider transcript, for the backend's Jev intent router. */
+    suspend fun postTurn(rideToken: String, turnId: Long, text: String) {
+        post("/ride/turn", JSONObject().put("turnId", turnId).put("text", text), rideToken)
+    }
+
+    /** The phone's answer to a device request the backend sent over RTM. */
+    suspend fun postDeviceResult(rideToken: String, result: JSONObject) {
+        post("/ride/device-result", result, rideToken)
+    }
+
+    private suspend fun post(path: String, body: JSONObject, rideToken: String? = null): JSONObject = withContext(Dispatchers.IO) {
         val connection = (URL(baseUrl + path).openConnection() as HttpURLConnection).apply {
             requestMethod = "POST"
             connectTimeout = 10_000
             readTimeout = 30_000
             doOutput = true
             setRequestProperty("Content-Type", "application/json")
+            rideToken?.let { setRequestProperty("Authorization", "Bearer $it") }
         }
         try {
             connection.outputStream.use { it.write(body.toString().toByteArray()) }

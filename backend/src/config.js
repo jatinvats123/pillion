@@ -37,6 +37,27 @@ export const config = {
     minimaxVoiceId: env('MINIMAX_VOICE_ID', 'English_captivating_female1'),
   },
   turnDetectionLanguage: env('TURN_DETECTION_LANGUAGE', 'hi-IN'),
+  // Public HTTPS address of this backend (cloudflared), where Agora's cloud calls Pillion's tools.
+  publicBaseUrl: env('PUBLIC_BASE_URL').replace(/\/+$/, ''),
+  // Starting agents through the tunnel is refused unless this is on (phone on mobile data).
+  allowPublicRideStart: env('ALLOW_PUBLIC_RIDE_START', 'false').toLowerCase() === 'true',
+  jev: {
+    enabled: env('JEV_ENABLED', 'true').toLowerCase() === 'true',
+    url: env('JEV_URL', 'https://www.jevai.org/api/v1/decisions'),
+    apiKey: env('JEV_API_KEY'),
+    // Empty = let the endpoint choose. TypeSafe's own API requires one (e.g. jev-latest).
+    model: env('JEV_MODEL'),
+    timeoutMs: Number(env('JEV_TIMEOUT_MS', '1500')),
+    minConfidence: Number(env('JEV_MIN_CONFIDENCE', '0.5')),
+  },
+  maps: {
+    // geoapify = free tier, no live traffic · google = Routes + Places (New), live traffic
+    provider: env('MAPS_PROVIDER', 'geoapify').toLowerCase(),
+    geoapifyApiKey: env('GEOAPIFY_API_KEY'),
+    googleApiKey: env('GOOGLE_MAPS_API_KEY'),
+  },
+  // Filler words play when the LLM hasn't started answering after this long (in practice: tool calls).
+  fillerWaitMs: Number(env('FILLER_WAIT_MS', '1500')),
   port: Number(env('PORT', '3000')),
   host: env('HOST', '127.0.0.1'),
   tokenExpirySeconds: Number(env('TOKEN_EXPIRY_SECONDS', '14400')),
@@ -57,8 +78,26 @@ export function validateConfig() {
   if (!(config.tokenExpirySeconds > 0 && config.tokenExpirySeconds <= 86400)) {
     problems.push('TOKEN_EXPIRY_SECONDS must be between 1 and 86400');
   }
+  if (config.publicBaseUrl && !config.publicBaseUrl.startsWith('https://')) {
+    problems.push('PUBLIC_BASE_URL must be an https:// URL (Agora only calls HTTPS tools)');
+  }
+  if (!(config.fillerWaitMs >= 100 && config.fillerWaitMs <= 10000)) problems.push('FILLER_WAIT_MS must be 100–10000');
+  if (!['geoapify', 'google'].includes(config.maps.provider)) problems.push('MAPS_PROVIDER must be "geoapify" or "google"');
 
   if (problems.length) {
     throw new Error(`Invalid backend/.env:\n  - ${problems.join('\n  - ')}`);
   }
+}
+
+export const mapsConfigured = () =>
+  Boolean(config.maps.provider === 'google' ? config.maps.googleApiKey : config.maps.geoapifyApiKey);
+
+/** Optional pieces that are missing: the server runs, but these features report errors. */
+export function configWarnings() {
+  const warnings = [];
+  if (!config.publicBaseUrl) warnings.push('PUBLIC_BASE_URL is not set: rides can\'t start until cloudflared runs (see .env.example)');
+  const mapsKey = config.maps.provider === 'google' ? 'GOOGLE_MAPS_API_KEY' : 'GEOAPIFY_API_KEY';
+  if (!mapsConfigured()) warnings.push(`${mapsKey} is not set (MAPS_PROVIDER=${config.maps.provider}): ETA and nearby places will fail`);
+  if (config.jev.enabled && !config.jev.apiKey) warnings.push('JEV_API_KEY is not set: Jev routing is off');
+  return warnings;
 }

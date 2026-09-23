@@ -15,6 +15,7 @@ import io.agora.rtm.MessageEvent
 import io.agora.rtm.PresenceEvent
 import io.agora.rtm.ResultCallback
 import io.agora.rtm.RtmClient
+import io.agora.rtm.RtmConstants
 import io.agora.rtm.RtmConfig
 import io.agora.rtm.RtmEventListener
 import io.agora.rtm.SubscribeOptions
@@ -38,7 +39,8 @@ import org.json.JSONObject
 /** Agent state as published by Agora ConvoAI over RTM. */
 enum class AgentState { Unknown, Idle, Listening, Thinking, Speaking, Silent }
 
-enum class Speaker { Rider, Pillion }
+/** [Action] lines show what Pillion did ("✓ SMS sent to Rahul"), sent by the backend over RTM. */
+enum class Speaker { Rider, Pillion, Action }
 
 data class TranscriptLine(
     val key: String,
@@ -46,7 +48,11 @@ data class TranscriptLine(
     val text: String,
     val isFinal: Boolean,
     val interrupted: Boolean = false,
+    val failed: Boolean = false,
 )
+
+/** A finished rider utterance (final ASR transcript) for one agent turn. */
+data class RiderTurn(val turnId: Long, val text: String)
 
 enum class ConnectionState { Disconnected, Connecting, Connected, Reconnecting }
 
@@ -100,6 +106,14 @@ class VoiceSession(context: Context) {
     )
     /** Per-reply latency breakdown (needs `enable_metrics` on the agent). */
     val latency: SharedFlow<TurnLatency> = _latency.asSharedFlow()
+
+    private val _riderTurns = MutableSharedFlow<RiderTurn>(extraBufferCapacity = 8, onBufferOverflow = BufferOverflow.DROP_OLDEST)
+    /** Each final rider transcript, once per turn (the backend's Jev router reads these). */
+    val riderTurns: SharedFlow<RiderTurn> = _riderTurns.asSharedFlow()
+
+    private val _serverRequests = MutableSharedFlow<JSONObject>(extraBufferCapacity = 16, onBufferOverflow = BufferOverflow.DROP_OLDEST)
+    /** `pillion.request` messages: the backend asking the phone to act (GPS, SMS, call…) for a tool. */
+    val serverRequests: SharedFlow<JSONObject> = _serverRequests.asSharedFlow()
     private val latencyTracker = LatencyTracker { report ->
         Log.i(TAG, "Latency $report")
         _latency.tryEmit(report)
@@ -110,6 +124,8 @@ class VoiceSession(context: Context) {
     private var ride: RideCredentials? = null
     private var joinResult: CompletableDeferred<Unit>? = null
     private val transcriptLines = LinkedHashMap<String, TranscriptLine>()
+    private val reportedTurns = ArrayDeque<Long>()
+    private var actionCount = 0
 
     /** Logs into RTM, then joins RTC. Throws if either fails; call [leave] to clean up. */
     suspend fun join(credentials: RideCredentials) = withContext(Dispatchers.Main) {
@@ -191,8 +207,22 @@ class VoiceSession(context: Context) {
         _agentState.value = AgentState.Unknown
     }
 
+    /**
+     * Hands the mic and speaker to a phone call and back. While a call is on, Pillion neither
+     * captures the rider (the call owns the mic) nor plays the agent's voice over the call.
+     */
+    suspend fun setPhoneCallActive(active: Boolean) = withContext(Dispatchers.Main) {
+        val engine = rtcEngine ?: return@withContext
+        Log.i(TAG, "Phone call ${if (active) "started: pausing" else "ended: resuming"} Pillion audio")
+        engine.enableLocalAudio(!active)
+        engine.muteAllRemoteAudioStreams(active)
+    }
+
     private fun resetState() {
-        synchronized(transcriptLines) { transcriptLines.clear() }
+        synchronized(transcriptLines) {
+            transcriptLines.clear()
+            reportedTurns.clear()
+        }
         latencyTracker.reset()
         _transcript.value = emptyList()
         _agentState.value = AgentState.Unknown
@@ -280,7 +310,12 @@ class VoiceSession(context: Context) {
                 else -> return
             }
             val json = runCatching { JSONObject(raw) }.getOrNull() ?: return
-            handleAgentMessage(json)
+            // Direct (user-channel) messages come from the Pillion backend; channel messages from the agent.
+            if (event.channelType == RtmConstants.RtmChannelType.USER) {
+                if (event.publisherId == SERVER_RTM_ID) handleServerMessage(json)
+            } else {
+                handleAgentMessage(json)
+            }
         }
 
         override fun onPresenceEvent(event: PresenceEvent) {
@@ -296,12 +331,11 @@ class VoiceSession(context: Context) {
         if (BuildConfig.DEBUG) logAgentEvent(json, turnId)
         trackLatency(json, turnId)
         when (json.optString("object")) {
-            "user.transcription" -> upsertLine(
-                speaker = Speaker.Rider,
-                turnId = turnId,
-                text = json.optString("text"),
-                isFinal = json.optBoolean("final", true),
-            )
+            "user.transcription" -> {
+                val isFinal = json.optBoolean("final", true)
+                upsertLine(speaker = Speaker.Rider, turnId = turnId, text = json.optString("text"), isFinal = isFinal)
+                if (isFinal) reportRiderTurn(turnId, json.optString("text").trim())
+            }
 
             // turn_status: 0 = in progress, 1 = finished, 2 = interrupted.
             "assistant.transcription" -> {
@@ -318,6 +352,34 @@ class VoiceSession(context: Context) {
             "message.interrupt" -> markInterrupted(turnId)
             "message.state" -> onAgentState(json.optString("state"), turnId.takeIf { it >= 0 })
             "message.error" -> Log.w(TAG, "Agent error: $json")
+        }
+    }
+
+    private fun handleServerMessage(json: JSONObject) {
+        if (BuildConfig.DEBUG) Log.d(TAG, "Server ${json.optString("object")} ${json.optString("action")}${json.optString("text")}")
+        when (json.optString("object")) {
+            "pillion.request" -> _serverRequests.tryEmit(json)
+            "pillion.action" -> showActionLine(json.optString("text"), failed = !json.optBoolean("ok", true))
+        }
+    }
+
+    private fun reportRiderTurn(turnId: Long, text: String) {
+        if (text.isEmpty()) return
+        synchronized(transcriptLines) {
+            if (turnId in reportedTurns) return
+            reportedTurns.addLast(turnId)
+            if (reportedTurns.size > 32) reportedTurns.removeFirst()
+        }
+        _riderTurns.tryEmit(RiderTurn(turnId, text))
+    }
+
+    /** Adds an action line ("✓ SMS sent to Rahul") to the transcript. */
+    fun showActionLine(text: String, failed: Boolean) {
+        if (text.isBlank()) return
+        synchronized(transcriptLines) {
+            val key = "${Speaker.Action}:${actionCount++}"
+            transcriptLines[key] = TranscriptLine(key, Speaker.Action, text.trim(), isFinal = true, failed = failed)
+            publishTranscript()
         }
     }
 
@@ -419,6 +481,8 @@ class VoiceSession(context: Context) {
 
     private companion object {
         const val TAG = "VoiceSession"
+        /** RTM user id the backend sends from (see backend/src/rtm.js). */
+        const val SERVER_RTM_ID = "pillion-server"
         const val JOIN_TIMEOUT_MS = 15_000L
         const val MAX_LINES = 200
 
