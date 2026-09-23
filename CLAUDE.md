@@ -77,7 +77,7 @@ They care about: deep Agora usage (not a re-skinned sample), production-quality 
 ## Later phases (agreed)
 
 - **Final phase:** README, including the "Agora SDK feedback" section built from the notes below.
-- **Phase 2 leftovers to verify on device:** permission-denied cards (skipped), a ride with `JEV_ENABLED=false`, the "✓ Delivered" line (depends on Vi sending delivery reports). SMS to the iPhone test number didn't arrive while Android → Android did: iPhone-side filtering, not the app.
+- **Phase 2 leftovers to verify on device:** permission-denied cards (skipped), earnings with Jev off (see Phase 2 tests), the "✓ Delivered" line (depends on Vi sending delivery reports). SMS to the iPhone test number didn't arrive while Android → Android did: iPhone-side filtering, not the app.
 
 ## Agora SDK feedback — notes for the README
 
@@ -115,6 +115,16 @@ Turn detection 640→400 ms: the part before the final transcript (end-of-speech
 - Latency from India: 0.45–0.8 s per call (one to two questions).
 - Rate limit on the community key is very tight: one call gets through, the next ones get 429 for a minute or more, even 35 s apart (1 of 6). No Retry-After header; one call hung 11 s. Hence the 30 s cooldown and the design where Jev is never on the critical path.
 - Answers seen: "Customer ko bolo 5 minute mein pahunch raha hoon" → sms_customer 0.52 (call_customer 0.36); "Customer ko call lagao" → call_customer 1.00; "aaj kitna kamaya" → earnings 1.00.
+
+## Phase 2 tests
+
+- **Jev off (`JEV_ENABLED=false`), Realme, 24 Sep 2026, two rides.** Every turn logged `[jev] … skipped (off); LLM routes alone`: no Jev calls, no errors.
+  - "नेक्स्ट ड्रॉप कितना दूर है?" → `getNextDropEta` called 1.6 s after the transcript, ok in 2.8 s → "Next drop · 6.9 km · 25 min".
+  - "पास में पेट्रोल पंप बताओ।" → `findNearby` called 1.5 s after the transcript, ok in 1.4 s → Indraprastha Gas Limited, 1.1 km.
+  - A misheard "कोई फॉर्म बताओ।" got a clarifying question and no tool call (correct).
+  - "Aaj kitna kamaya?" was not asked in the Jev-off rides (earnings was tested earlier with Jev on).
+  - Jev switched back on afterwards; a live call answered "Aaj kitna kamaya?" → earnings, confidence 1.00, 0.67 s (the call before it hit the 1.5 s timeout and was skipped, as designed).
+- The per-turn `[latency]` e2e on tool turns (3.1–3.3 s here) measures the first audio, which is the filler ("जांच कर रहा हूँ"); the real answer follows ~1–1.5 s later.
 
 ## Phase log
 
