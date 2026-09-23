@@ -1,0 +1,19 @@
+{
+  "name": "pillion-backend",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Pillion backend: issues Agora tokens and starts/stops the Conversational AI agent.",
+  "main": "src/server.js",
+  "scripts": {
+    "start": "node src/server.js",
+    "dev": "node --watch src/server.js"
+  },
+  "engines": {
+    "node": ">=20.12"
+  },
+  "dependencies": {
+    "agora-agents": "2.10.0",
+    "express": "^5.2.1"
+  }
+}

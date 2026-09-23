@@ -1,0 +1,34 @@
+<resources>
+    <string name="app_name">Pillion</string>
+    <string name="tagline">The AI that rides with you</string>
+
+    <string name="start_ride">Start Ride</string>
+    <string name="end_ride">End Ride</string>
+    <string name="ending_ride">Ending…</string>
+
+    <string name="status_idle">Ready</string>
+    <string name="status_connecting">Connecting</string>
+    <string name="status_listening">Listening</string>
+    <string name="status_thinking">Thinking</string>
+    <string name="status_speaking">Speaking</string>
+    <string name="status_reconnecting">Reconnecting</string>
+    <string name="status_ended">Ended</string>
+    <string name="status_error">Error</string>
+
+    <string name="speaker_rider">You</string>
+    <string name="speaker_pillion">Pillion</string>
+    <string name="transcript_empty">Tap Start Ride and talk in Hindi, English or Hinglish.</string>
+    <string name="interrupted">interrupted</string>
+
+    <string name="mic_rationale_title">Pillion needs your microphone</string>
+    <string name="mic_rationale_body">Pillion listens only during an active ride so you can talk to it without touching the phone.</string>
+    <string name="mic_allow">Allow microphone</string>
+    <string name="mic_denied_title">Microphone access is off</string>
+    <string name="mic_denied_body">Pillion can\'t hear you without it. Turn on Microphone in the app settings.</string>
+    <string name="open_settings">Open settings</string>
+    <string name="dismiss">Dismiss</string>
+
+    <string name="notification_channel_ride">Active ride</string>
+    <string name="notification_ride_title">Ride active</string>
+    <string name="notification_ride_text">Pillion is listening</string>
+</resources>
