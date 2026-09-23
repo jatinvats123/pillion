@@ -9,8 +9,9 @@ val localProperties = Properties().apply {
     rootProject.file("local.properties").takeIf { it.exists() }?.inputStream()?.use(::load)
 }
 
-// Emulator reaches the host's localhost via 10.0.2.2. Override with -PPILLION_BACKEND_URL=...
-// (scripts/phone.ps1 does this) or in android/local.properties.
+// Emulator reaches the host's localhost via 10.0.2.2. Override with -PPILLION_BACKEND_URL=... or in
+// android/local.properties: one URL, or several comma-separated, tried in order at each ride start
+// (scripts/phone.ps1 passes the laptop's Wi-Fi address, adb reverse and the tunnel).
 val backendUrl: String = providers.gradleProperty("PILLION_BACKEND_URL").orNull
     ?: localProperties.getProperty("PILLION_BACKEND_URL")
     ?: "http://10.0.2.2:3000"

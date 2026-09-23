@@ -29,13 +29,24 @@ app.get('/health', (_req, res) => {
 });
 
 // The tunnel is there for Agora's tool calls. Starting and stopping agents (which bills the Agora
-// account) stays local: requests forwarded by Cloudflare carry cf-ray / cf-connecting-ip.
+// account) stays on this laptop and its local network (the phone over Wi-Fi when HOST=0.0.0.0):
+// requests forwarded by Cloudflare carry cf-ray / cf-connecting-ip, the rest must come from a
+// private address.
 function localOnly(req, res, next) {
   const viaTunnel = Boolean(req.get('cf-ray') || req.get('cf-connecting-ip'));
   if (viaTunnel && !config.allowPublicRideStart) {
     return res.status(403).json({ error: 'Not available through the public tunnel.' });
   }
+  if (!viaTunnel && !isPrivateAddress(req.socket.remoteAddress)) {
+    return res.status(403).json({ error: 'Only available on the local network.' });
+  }
   return next();
+}
+
+// Loopback, RFC 1918 and link-local addresses (IPv4, or IPv4-mapped IPv6 as Node reports them).
+function isPrivateAddress(address = '') {
+  const ip = address.replace(/^::ffff:/, '');
+  return ip === '::1' || /^(127\.|10\.|192\.168\.|169\.254\.|172\.(1[6-9]|2\d|3[01])\.)/.test(ip);
 }
 
 // Every ride-scoped call (Agora's tool calls and the rider app's own) carries the ride's secret.

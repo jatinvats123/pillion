@@ -23,10 +23,22 @@ data class RideCredentials(
 
 class BackendException(message: String) : IOException(message)
 
-/** Talks to the Pillion Node backend. All secrets stay on the backend. */
-class BackendApi(private val baseUrl: String = BuildConfig.BACKEND_URL) {
+/**
+ * Talks to the Pillion Node backend. All secrets stay on the backend.
+ *
+ * [baseUrls]: where the backend may be, most direct first (`BACKEND_URL` is a comma-separated
+ * list; scripts/phone.ps1 puts in the laptop's Wi-Fi address, adb reverse and the tunnel). Each
+ * ride starts on the first one whose /health answers, so losing one route — wireless adb drops
+ * whenever the phone sleeps — doesn't cut the phone off from the backend.
+ */
+class BackendApi(
+    private val baseUrls: List<String> = BuildConfig.BACKEND_URL.split(',').map { it.trim().trimEnd('/') }.filter { it.isNotEmpty() },
+) {
+    @Volatile
+    private var baseUrl = baseUrls.first()
 
     suspend fun startAgent(): RideCredentials {
+        baseUrl = reachableBaseUrl()
         val json = post("/agent/start", JSONObject())
         return RideCredentials(
             appId = json.getString("appId"),
@@ -93,5 +105,32 @@ class BackendApi(private val baseUrl: String = BuildConfig.BACKEND_URL) {
         } finally {
             connection.disconnect()
         }
+    }
+
+    /** The first base URL whose /health answers. If none does, says so (with the addresses, in debug builds). */
+    private suspend fun reachableBaseUrl(): String = withContext(Dispatchers.IO) {
+        baseUrls.firstOrNull(::answersHealth) ?: throw BackendException(
+            if (BuildConfig.DEBUG) {
+                "Can't reach the Pillion server (tried ${baseUrls.joinToString { it.substringAfter("://") }})."
+            } else {
+                "Can't reach the Pillion server."
+            }
+        )
+    }
+
+    private fun answersHealth(url: String): Boolean = runCatching {
+        val connection = (URL("$url/health").openConnection() as HttpURLConnection).apply {
+            connectTimeout = HEALTH_TIMEOUT_MS
+            readTimeout = HEALTH_TIMEOUT_MS
+        }
+        try {
+            connection.responseCode == 200
+        } finally {
+            connection.disconnect()
+        }
+    }.getOrDefault(false)
+
+    private companion object {
+        const val HEALTH_TIMEOUT_MS = 2_000
     }
 }
