@@ -22,6 +22,8 @@ app.get('/health', (_req, res) => {
     voiceStack: config.voiceStack,
     llm: config.llm.provider === 'openai' ? `managed ${config.llm.openaiModel}` : config.gemini.model,
     tools: Boolean(config.publicBaseUrl),
+    // Which tunnel this process was started with (.env changes need a restart); scripts/start.ps1 compares it.
+    tunnel: config.publicBaseUrl ? new URL(config.publicBaseUrl).host : null,
     jev: jevEnabled(),
     maps: mapsConfigured() ? config.maps.provider : false,
     activeAgents: activeAgentCount(),

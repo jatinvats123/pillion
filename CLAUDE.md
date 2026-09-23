@@ -54,6 +54,7 @@ They care about: deep Agora usage (not a re-skinned sample), production-quality 
 
 ## Running locally
 
+- One command for a test session: `.\scripts\start.ps1` (asks for the phone's Wireless debugging IP:port): keeps or starts the cloudflared tunnel (writes `PUBLIC_BASE_URL` into `backend/.env`), starts/restarts the backend in its own window (restarts if it runs with an old tunnel, or if two backends listen on :3000 - rides live in one process), cleans stale adb entries, connects, sets adb reverse, and checks the backend from the laptop, over Wi-Fi, through the tunnel and from the phone (OK/FAIL). Then `.\scripts\phone.ps1 -Serial <IP:port>` to build and install.
 - Backend: `cd backend; npm install; npm run dev` (auto-reloads on code changes; `.env` changes still need a restart). Needs `backend/.env`, see `.env.example`.
 - Tools need a public HTTPS URL each session: `cloudflared tunnel --protocol http2 --url http://localhost:3000` → put the printed URL in `PUBLIC_BASE_URL` → restart the backend. Without it `/agent/start` refuses to start rides.
 - Backend checks without the phone: `node scripts/try-jev.js [--gap 35] "<sentence>"`, `node scripts/try-maps.js route <lat>,<lng> "<address>"` / `places <lat>,<lng> <category> ["<text>"]`, `node scripts/ride-check.js "<sentence>" ...` (real agent, text injected with Agora `think`; phone-backed tools fail with `phone_not_responding`). With a live ride, `POST /debug/think` (ride token) injects text into it.
