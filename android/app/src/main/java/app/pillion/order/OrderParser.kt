@@ -238,6 +238,7 @@ object OrderParser {
     private val PREPOSITIONS = words("to", "at", "from")
     private val CALL = norm("call")
 
+    private val VISARGA_COLON = Regex("""ः(?=\s|$)""")
     private val TOKEN = Regex("""[^\s:]+|:""")
     private val SEPARATORS = setOf(":", "-", "–", "—", "|", "·", "•", "=")
 
@@ -247,7 +248,8 @@ object OrderParser {
      * sentence that merely starts with a label word isn't read as one.
      */
     private fun matchLabel(row: Row): LabelMatch? {
-        val first = row.cells.first()
+        // OCR reads a colon after Devanagari as a visarga (ः): "ग्राहकः सुनीता देवी".
+        val first = row.cells.first().replace(VISARGA_COLON, ":")
         val tokens = TOKEN.findAll(first).toList()
         val start = tokens.indexOfFirst { norm(it.value).isNotEmpty() }.takeIf { it in 0..1 } ?: return null
         val words = tokens.drop(start).map { norm(it.value) }

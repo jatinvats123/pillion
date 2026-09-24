@@ -1,5 +1,9 @@
+// Platform ExifInterface (only for Android 8.x photos): its bugs were fixed in API 25; minSdk is 26.
+@file:SuppressLint("ExifInterface")
+
 package app.pillion.order
 
+import android.annotation.SuppressLint
 import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory

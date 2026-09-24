@@ -140,6 +140,22 @@ class OrderParserTest {
     }
 
     @Test
+    fun visargaReadInPlaceOfColon() {
+        // What ML Kit returned for the Hindi mock screen: the colon after ग्राहक came back as ः.
+        val order = OrderParser.parse(
+            """
+            डिलीवरी
+            ग्राहकः सुनीता देवी
+            फ़ोन: 8800 112233
+            पता: मकान 12, गली 4, शकरपुर, दिल्ली 110092
+            """.trimIndent()
+        )
+        assertField("सुनीता देवी", Confidence.High, order.customerName)
+        assertField("+918800112233", Confidence.High, order.customerPhone)
+        assertField("मकान 12, गली 4, शकरपुर, दिल्ली 110092", Confidence.High, order.dropAddress)
+    }
+
+    @Test
     fun devanagariNameUnderEnglishLabel() {
         val order = OrderParser.parse("Customer: राहुल वर्मा\nPhone: 9811022334\nAddress: 12, Laxmi Nagar, Delhi 110092")
         assertField("राहुल वर्मा", Confidence.High, order.customerName)
