@@ -1,6 +1,7 @@
 package app.pillion.ui
 
 import android.app.Application
+import android.os.SystemClock
 import android.util.Log
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
@@ -17,6 +18,7 @@ import app.pillion.order.ScanState
 import app.pillion.pillion
 import app.pillion.ride.RideRepository
 import app.pillion.ride.RideService
+import app.pillion.ride.StartGate
 import app.pillion.safety.SafetyState
 import app.pillion.safety.SosTrigger
 import app.pillion.voice.AgentState
@@ -82,6 +84,7 @@ class RideViewModel(application: Application) : AndroidViewModel(application) {
     private var rideGeneration = 0
     private var rideStartedAt = 0L
     private var rideServices: Job? = null
+    private val startGate = StartGate()
 
     private val scanner = application.pillion.scanner
 
@@ -145,7 +148,25 @@ class RideViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    fun startRide() {
+    /** The rider tapped Start Ride (or Allow microphone on its card); the permission prompts come next. */
+    fun requestStart(caller: String) {
+        startGate.request(SystemClock.elapsedRealtime())
+        Log.i(TAG, "Start requested by $caller")
+    }
+
+    /**
+     * Starts the ride, but only right after [requestStart]: never from a share, an activity
+     * re-creation or a re-delivered permission result (each ride runs an Agora agent). Every call
+     * is logged with its caller and call site (logcat tag RideViewModel), allowed or not.
+     */
+    fun startRide(caller: String) {
+        val sinceRequest = startGate.consume(SystemClock.elapsedRealtime())
+        val site = Throwable().stackTrace.drop(1).take(6).joinToString(" < ") { "${it.fileName}:${it.lineNumber}" }
+        if (sinceRequest == null) {
+            Log.w(TAG, "startRide from $caller REFUSED: no Start Ride tap before it · $site")
+            return
+        }
+        Log.i(TAG, "startRide from $caller, $sinceRequest ms after the tap · $site")
         if (phase.value == Phase.Active || phase.value == Phase.Ending) return
         phase.value = Phase.Active
         rideGeneration++

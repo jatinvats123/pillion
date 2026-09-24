@@ -119,7 +119,7 @@ fun RideRoute(onOpenSafety: () -> Unit, onOpenCamera: () -> Unit, viewModel: Rid
     // Optional extras are only asked once the mic is granted; whatever the answer, the ride starts.
     val optionalPermissionsLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
-    ) { viewModel.startRide() }
+    ) { viewModel.startRide(caller = "permission prompts after Start Ride") }
 
     val micPermissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission()
@@ -158,6 +158,7 @@ fun RideRoute(onOpenSafety: () -> Unit, onOpenCamera: () -> Unit, viewModel: Rid
         gpsAvailable = gpsAvailable,
         setupIssues = if (setupDismissed) emptyList() else setupIssues,
         onStartRide = {
+            viewModel.requestStart(caller = "Start Ride button")
             when {
                 context.hasMicPermission() -> optionalPermissionsLauncher.launch(optionalRidePermissions())
                 activity?.shouldShowRequestPermissionRationale(Manifest.permission.RECORD_AUDIO) == true ->
@@ -170,7 +171,10 @@ fun RideRoute(onOpenSafety: () -> Unit, onOpenCamera: () -> Unit, viewModel: Rid
         onOpenAlert = { SafetyAlertActivity.launch(context) },
         onRetryVoice = viewModel::retryVoice,
         onOpenSafety = onOpenSafety,
-        onAllowMic = { micPermissionLauncher.launch(Manifest.permission.RECORD_AUDIO) },
+        onAllowMic = {
+            viewModel.requestStart(caller = "Allow microphone card")
+            micPermissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
+        },
         onOpenSettings = { context.openAppSettings() },
         onDismissMicPrompt = { micPrompt = MicPrompt.None },
         onGrantPermission = { actionPermissionLauncher.launch(it.manifestNames) },
