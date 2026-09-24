@@ -21,6 +21,8 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.RowScope
@@ -150,6 +152,9 @@ fun RideRoute(
     val riderName by viewModel.riderName.collectAsStateWithLifecycle()
     val today by viewModel.today.collectAsStateWithLifecycle()
     val muted by viewModel.micMuted.collectAsStateWithLifecycle()
+    val subtitles by viewModel.subtitles.collectAsStateWithLifecycle()
+    val subtitlesOn by LocalContext.current.pillion.uiPrefs.subtitles.collectAsStateWithLifecycle()
+    val tripSummary by viewModel.tripSummary.collectAsStateWithLifecycle()
     // Read by the orb at draw time only: ten level updates a second don't recompose the screen.
     val riderLevel = viewModel.riderLevel.collectAsStateWithLifecycle()
     val agentLevel = viewModel.agentLevel.collectAsStateWithLifecycle()
@@ -300,7 +305,6 @@ fun RideRoute(
                 onDismiss = { cameraRefused = false },
             )
         }
-        if (!setupDismissed && setupIssues.isNotEmpty()) add { SetupCard(setupIssues, onFixSetup) { setupDismissed = true } }
     }
 
     RideScreen(
@@ -311,7 +315,17 @@ fun RideRoute(
         muted = muted,
         riderLevel = riderLevel,
         agentLevel = agentLevel,
+        subtitles = if (subtitlesOn) subtitles else emptyMap(),
+        tripSummary = tripSummary,
+        onDoneSummary = viewModel::dismissTripSummary,
         notices = notices,
+        // The idle screen shows it as a card; during a ride only its chip in the conversation opens it.
+        setupCard = if (setupIssues.isEmpty()) {
+            null
+        } else {
+            { open -> SetupCard(setupIssues, onFixSetup, initiallyOpen = open, onDismiss = if (open) null else ({ setupDismissed = true })) }
+        },
+        setupDismissed = setupDismissed,
         orderCard = {
             ActiveOrderCard(
                 order = order,
@@ -367,7 +381,7 @@ fun RideRoute(
     )
 }
 
-private enum class Sheet { None, Transcript, Order, Debug }
+private enum class Sheet { None, Transcript, Order, Debug, Setup }
 
 @Composable
 private fun RideScreen(
@@ -378,7 +392,14 @@ private fun RideScreen(
     muted: Boolean,
     riderLevel: State<Float>,
     agentLevel: State<Float>,
+    /** English for Hindi lines, by line text (empty when subtitles are off). */
+    subtitles: Map<String, String>,
+    tripSummary: TripSummary?,
+    onDoneSummary: () -> Unit,
     notices: List<@Composable () -> Unit>,
+    /** What keeps safety from working fully; null when all is set up. Its argument: shown open. */
+    setupCard: (@Composable (Boolean) -> Unit)?,
+    setupDismissed: Boolean,
     orderCard: @Composable () -> Unit,
     /** Set while an order is read or checked: it takes the main area's place. */
     scanPanel: (@Composable (Modifier) -> Unit)?,
@@ -415,7 +436,7 @@ private fun RideScreen(
                     Wordmark()
                 }
                 Box(Modifier.weight(1f))
-                if (inRide) RoundIconButton(R.drawable.ic_package_2, stringResource(R.string.order_button), onClick = { sheet = Sheet.Order })
+                if (inRide) RoundIconButton(R.drawable.ic_document_scanner, stringResource(R.string.scan_order_button), onClick = { sheet = Sheet.Order })
                 if (debugTools != null) RoundIconButton(R.drawable.ic_bug_report, stringResource(R.string.debug_tools), onClick = { sheet = Sheet.Debug })
                 RoundIconButton(R.drawable.ic_settings, stringResource(R.string.settings), onClick = onOpenSettings)
             }
@@ -449,44 +470,66 @@ private fun RideScreen(
                     if (problem != null) {
                         VoiceOfflinePanel(problem, onRetryVoice, Modifier.weight(1f).then(gutter))
                     } else {
-                        LiveTranscript(state.transcript, onExpand = { sheet = Sheet.Transcript }, modifier = Modifier.weight(1f).then(gutter))
+                        LiveTranscript(
+                            lines = state.transcript,
+                            subtitles = subtitles,
+                            onExpand = { sheet = Sheet.Transcript },
+                            onSetupChip = if (setupCard != null) ({ sheet = Sheet.Setup }) else null,
+                            modifier = Modifier.weight(1f).then(gutter),
+                        )
                     }
                 }
-                else -> Box(Modifier.weight(1f)) {
-                    Column(
+                tripSummary != null -> Box(Modifier.weight(1f)) {
+                    TripSummaryContent(
+                        tripSummary,
                         Modifier
                             .verticalScroll(rememberScrollState())
                             .then(gutter)
                             .padding(bottom = Space.xl),
-                        verticalArrangement = Arrangement.spacedBy(Space.l),
+                    )
+                    BottomFade(Modifier.align(Alignment.BottomCenter))
+                }
+                else -> BoxWithConstraints(Modifier.weight(1f)) {
+                    val viewport = maxHeight
+                    Column(
+                        Modifier
+                            .verticalScroll(rememberScrollState())
+                            .heightIn(min = viewport)
+                            .then(gutter)
+                            .padding(bottom = Space.xl),
+                        verticalArrangement = Arrangement.spacedBy(Space.m),
                     ) {
                         Greeting(riderName, today)
                         if (alertOn) AlertBanner(onOpenAlert)
-                        Orb(
-                            mood = OrbMood.Dormant,
-                            level = { 0f },
-                            description = stringResource(R.string.orb_dormant),
-                            modifier = Modifier.fillMaxWidth().height(160.dp),
-                        )
+                        // The orb takes the height that's left (up to 200 dp) and steps aside when
+                        // cards need the room, so the order card is never cut off.
+                        BoxWithConstraints(Modifier.fillMaxWidth().weight(1f).heightIn(max = 200.dp)) {
+                            if (maxHeight >= 96.dp) {
+                                Orb(
+                                    mood = OrbMood.Dormant,
+                                    level = { 0f },
+                                    description = stringResource(R.string.orb_dormant),
+                                    modifier = Modifier.fillMaxSize(),
+                                )
+                            }
+                        }
                         notices.forEach { it() }
+                        if (!setupDismissed) setupCard?.invoke(false)
                         orderCard()
                     }
-                    // Cards slide softly under the ride buttons instead of being cut off.
-                    Box(
-                        Modifier
-                            .align(Alignment.BottomCenter)
-                            .fillMaxWidth()
-                            .height(Space.xl)
-                            .background(Brush.verticalGradient(listOf(Color.Transparent, colors.background))),
-                    )
+                    BottomFade(Modifier.align(Alignment.BottomCenter))
                 }
             }
 
-            RideControls(
+            // Checking a scanned order before a ride: its own Cancel / Set buttons are the actions
+            // (SOS is back as soon as it closes). During a ride End Ride and SOS always stay.
+            if (scanPanel == null || inRide) RideControls(
                 inRide = inRide,
+                summaryShown = tripSummary != null && !inRide && scanPanel == null,
                 ending = state.status == RideStatus.Ending,
                 alertOn = alertOn,
                 muted = muted,
+                onDoneSummary = onDoneSummary,
                 onStartRide = onStartRide,
                 onEndRide = onEndRide,
                 onSos = onSos,
@@ -498,10 +541,28 @@ private fun RideScreen(
 
     when (sheet) {
         Sheet.None -> Unit
-        Sheet.Transcript -> TranscriptSheet(state.transcript, onDismiss = { sheet = Sheet.None })
+        Sheet.Transcript -> TranscriptSheet(
+            lines = state.transcript,
+            subtitles = subtitles,
+            onSetupChip = if (setupCard != null) ({ sheet = Sheet.Setup }) else null,
+            onDismiss = { sheet = Sheet.None },
+        )
         Sheet.Order -> PillionSheet(onDismiss = { sheet = Sheet.None }) { orderCard() }
         Sheet.Debug -> PillionSheet(onDismiss = { sheet = Sheet.None }) { debugTools?.invoke() }
+        Sheet.Setup -> PillionSheet(onDismiss = { sheet = Sheet.None }) { setupCard?.invoke(true) }
     }
+}
+
+/** Content slides softly under the ride buttons instead of being cut off. */
+@Composable
+private fun BottomFade(modifier: Modifier = Modifier) {
+    val background = Pillion.colors.background
+    Box(
+        modifier
+            .fillMaxWidth()
+            .height(Space.xl)
+            .background(Brush.verticalGradient(listOf(Color.Transparent, background))),
+    )
 }
 
 /** The status pill's word, the orb's mood and the orb's spoken description, from the ride state. */
@@ -593,7 +654,13 @@ private fun AlertBanner(onOpen: () -> Unit) {
  * the whole conversation.
  */
 @Composable
-private fun LiveTranscript(lines: List<TranscriptLine>, onExpand: () -> Unit, modifier: Modifier = Modifier) {
+private fun LiveTranscript(
+    lines: List<TranscriptLine>,
+    subtitles: Map<String, String>,
+    onExpand: () -> Unit,
+    onSetupChip: (() -> Unit)?,
+    modifier: Modifier = Modifier,
+) {
     val colors = Pillion.colors
     val recent = lines.takeLast(4)
     val newest = recent.indexOfLast { it.speaker != Speaker.Action }
@@ -623,7 +690,11 @@ private fun LiveTranscript(lines: List<TranscriptLine>, onExpand: () -> Unit, mo
             ) {
                 recent.forEachIndexed { index, line ->
                     key(line.key) {
-                        if (line.speaker == Speaker.Action) ActionChip(line) else SpokenLine(line, latest = index == newest)
+                        if (line.speaker == Speaker.Action) {
+                            ActionChip(line, onClick = onSetupChip.takeIf { line.isSetupWarning() })
+                        } else {
+                            SpokenLine(line, subtitles[line.text], latest = index == newest)
+                        }
                     }
                 }
             }
@@ -645,8 +716,9 @@ private fun Modifier.fadeTopEdge(): Modifier = this
         }
     }
 
+/** A line, and under it its English subtitle when it's Hindi and the translation came back. */
 @Composable
-private fun SpokenLine(line: TranscriptLine, latest: Boolean) {
+private fun SpokenLine(line: TranscriptLine, subtitle: String?, latest: Boolean) {
     val colors = Pillion.colors
     val rider = line.speaker == Speaker.Rider
     Column(
@@ -654,6 +726,7 @@ private fun SpokenLine(line: TranscriptLine, latest: Boolean) {
             .fillMaxWidth()
             .alpha(if (line.isFinal) 1f else 0.72f),
         horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(Space.xs),
     ) {
         Text(
             stringResource(if (rider) R.string.speaker_rider else R.string.speaker_pillion),
@@ -667,28 +740,51 @@ private fun SpokenLine(line: TranscriptLine, latest: Boolean) {
             color = if (latest) colors.ink else colors.inkSecondary,
             textAlign = TextAlign.Center,
         )
+        if (subtitle != null) {
+            val subtitleDescription = stringResource(R.string.subtitle_description, subtitle)
+            Text(
+                text = subtitle,
+                style = if (latest) RideType.secondary else MaterialTheme.typography.bodyLarge,
+                color = colors.inkSecondary,
+                textAlign = TextAlign.Center,
+                modifier = Modifier.semantics { contentDescription = subtitleDescription },
+            )
+        }
     }
 }
 
-/** Something Pillion did ("✓ SMS sent to Rahul", "⚠ Crash detected"): a chip with a real icon, not a speech line. */
+// SafetyMonitor.announceIfNotSetUp's line: during a ride, the one way to the safety setup fixes.
+private fun TranscriptLine.isSetupWarning() = speaker == Speaker.Action && text.startsWith("⚠ SOS not set up")
+
+/**
+ * Something Pillion did ("✓ SMS sent to Rahul", "⚠ Crash detected"): a chip with a real icon, not
+ * a speech line. With [onClick] (the "SOS not set up" line) it opens the safety setup fixes.
+ */
 @Composable
-private fun ActionChip(line: TranscriptLine) {
+private fun ActionChip(line: TranscriptLine, onClick: (() -> Unit)? = null) {
     val colors = Pillion.colors
     val (icon, tint, meaning) = when {
         line.text.startsWith("↻") -> Triple(R.drawable.ic_sync, colors.inkSecondary, R.string.action_update)
+        line.text.startsWith("☕") -> Triple(R.drawable.ic_bedtime, colors.ink, R.string.action_reminder)
         line.text.startsWith("⚠") -> Triple(R.drawable.ic_warning, colors.danger, R.string.action_warning)
         line.failed || line.text.startsWith("✗") -> Triple(R.drawable.ic_error, colors.danger, R.string.action_failed)
         else -> Triple(R.drawable.ic_check_circle, colors.success, R.string.action_done)
     }
+    val openLabel = stringResource(R.string.setup_open)
     Row(
         modifier = Modifier
-            .background(colors.surfaceHigh, CircleShape)
+            .clip(CircleShape)
+            .background(colors.surfaceHigh)
+            .then(if (onClick != null) Modifier.clickable(onClickLabel = openLabel, role = Role.Button, onClick = onClick) else Modifier)
+            .heightIn(min = if (onClick != null) 48.dp else 0.dp)
             .padding(horizontal = 14.dp, vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(Space.s),
     ) {
         Icon(painterResource(icon), contentDescription = stringResource(meaning), tint = tint, modifier = Modifier.size(20.dp))
-        Text(line.text.trimStart { !it.isLetterOrDigit() }, style = MaterialTheme.typography.labelLarge, color = colors.ink)
+        // The leading ✓ / ✗ / ⚠ / ↻ / ☕ is shown as the icon instead.
+        Text(line.text.trimStart { !it.isLetterOrDigit() }, style = MaterialTheme.typography.labelLarge, color = colors.ink, modifier = Modifier.weight(1f, fill = false))
+        if (onClick != null) Icon(painterResource(R.drawable.ic_chevron_right), contentDescription = null, tint = colors.ink, modifier = Modifier.size(20.dp))
     }
 }
 
@@ -724,9 +820,12 @@ private fun VoiceOfflinePanel(problem: String, onRetry: () -> Unit, modifier: Mo
 @Composable
 private fun RideControls(
     inRide: Boolean,
+    /** The trip summary is up: its Done takes Start Ride's place. */
+    summaryShown: Boolean,
     ending: Boolean,
     alertOn: Boolean,
     muted: Boolean,
+    onDoneSummary: () -> Unit,
     onStartRide: () -> Unit,
     onEndRide: () -> Unit,
     onSos: () -> Unit,
@@ -737,7 +836,18 @@ private fun RideControls(
     val haptics = LocalHapticFeedback.current
     val largeText = LocalDensity.current.fontScale > 1.3f
     val main = @Composable { buttonModifier: Modifier ->
-        if (inRide) {
+        if (summaryShown) {
+            PillButton(
+                text = stringResource(R.string.done),
+                onClick = onDoneSummary,
+                icon = R.drawable.ic_check,
+                container = colors.ink,
+                content = colors.background,
+                minHeight = Targets.ride,
+                style = RideType.control,
+                modifier = buttonModifier,
+            )
+        } else if (inRide) {
             PillButton(
                 text = stringResource(if (ending) R.string.ending_ride else R.string.end_ride),
                 onClick = {
@@ -822,28 +932,44 @@ private fun SosButton(enabled: Boolean, onClick: () -> Unit) {
     }
 }
 
-/** Pillion stops hearing the rider (the mic isn't sent) until tapped again. */
+/**
+ * Pillion stops hearing the rider (the mic isn't sent) until tapped again. Muted: filled dark
+ * circle, crossed-out mic and the word "Muted"; the status pill says "Mic off" too.
+ */
 @Composable
 private fun MuteButton(muted: Boolean, enabled: Boolean, onToggle: () -> Unit) {
     val colors = Pillion.colors
     val description = stringResource(R.string.mute_description)
     val stateText = stringResource(if (muted) R.string.mute_state_on else R.string.mute_state_off)
-    Box(
-        contentAlignment = Alignment.Center,
+    Column(
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(Space.xs),
         modifier = Modifier
-            .size(Targets.rideSmall)
-            .background(if (muted) colors.ink else colors.surfaceHigh, CircleShape)
+            .clip(RoundedCornerShape(Space.l))
             .toggleable(value = muted, enabled = enabled, role = Role.Switch, onValueChange = { onToggle() })
-            .semantics {
+            .semantics(mergeDescendants = true) {
                 contentDescription = description
                 stateDescription = stateText
             },
     ) {
-        Icon(
-            painterResource(if (muted) R.drawable.ic_mic_off else R.drawable.ic_mic),
-            contentDescription = null,
-            tint = if (muted) colors.background else colors.ink,
-            modifier = Modifier.size(32.dp),
+        Box(
+            contentAlignment = Alignment.Center,
+            modifier = Modifier
+                .size(Targets.rideSmall)
+                .background(if (muted) colors.ink else colors.surfaceHigh, CircleShape),
+        ) {
+            Icon(
+                painterResource(if (muted) R.drawable.ic_mic_off else R.drawable.ic_mic),
+                contentDescription = null,
+                tint = if (muted) colors.background else colors.ink,
+                modifier = Modifier.size(32.dp),
+            )
+        }
+        Text(
+            stringResource(if (muted) R.string.mute_label_on else R.string.mute_label_off),
+            style = MaterialTheme.typography.labelMedium,
+            color = if (muted) colors.ink else colors.inkSecondary,
+            modifier = Modifier.clearAndSetSemantics {},
         )
     }
 }
@@ -864,7 +990,12 @@ private fun PillionSheet(onDismiss: () -> Unit, content: @Composable () -> Unit)
 /** The whole conversation, following the newest line. */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun TranscriptSheet(lines: List<TranscriptLine>, onDismiss: () -> Unit) {
+private fun TranscriptSheet(
+    lines: List<TranscriptLine>,
+    subtitles: Map<String, String>,
+    onSetupChip: (() -> Unit)?,
+    onDismiss: () -> Unit,
+) {
     val colors = Pillion.colors
     val listState = rememberLazyListState(initialFirstVisibleItemIndex = lines.lastIndex.coerceAtLeast(0))
     LaunchedEffect(lines.size) { if (lines.isNotEmpty()) listState.animateScrollToItem(lines.lastIndex) }
@@ -880,21 +1011,25 @@ private fun TranscriptSheet(lines: List<TranscriptLine>, onDismiss: () -> Unit) 
         LazyColumn(
             state = listState,
             modifier = Modifier.fillMaxWidth(),
-            contentPadding = androidx.compose.foundation.layout.PaddingValues(start = Space.gutter, end = Space.gutter, top = Space.m, bottom = Space.xl),
+            contentPadding = PaddingValues(start = Space.gutter, end = Space.gutter, top = Space.m, bottom = Space.xl),
             verticalArrangement = Arrangement.spacedBy(Space.m),
         ) {
             if (lines.isEmpty()) {
                 item { Text(stringResource(R.string.transcript_empty), style = MaterialTheme.typography.bodyLarge, color = colors.inkSecondary) }
             }
             items(lines, key = { it.key }) { line ->
-                if (line.speaker == Speaker.Action) ActionChip(line) else TranscriptBubble(line)
+                if (line.speaker == Speaker.Action) {
+                    ActionChip(line, onClick = onSetupChip.takeIf { line.isSetupWarning() })
+                } else {
+                    TranscriptBubble(line, subtitles[line.text])
+                }
             }
         }
     }
 }
 
 @Composable
-private fun TranscriptBubble(line: TranscriptLine) {
+private fun TranscriptBubble(line: TranscriptLine, subtitle: String?) {
     val colors = Pillion.colors
     val rider = line.speaker == Speaker.Rider
     Column(Modifier.fillMaxWidth(), horizontalAlignment = if (rider) Alignment.End else Alignment.Start) {
@@ -904,31 +1039,58 @@ private fun TranscriptBubble(line: TranscriptLine) {
             color = colors.inkSecondary,
             modifier = Modifier.padding(horizontal = Space.xs, vertical = 2.dp),
         )
-        val interrupted = if (line.interrupted) " — ${stringResource(R.string.interrupted)}" else ""
-        Text(
-            text = line.text + interrupted,
-            style = MaterialTheme.typography.bodyLarge,
-            color = colors.ink,
-            modifier = Modifier
+        Column(
+            Modifier
                 .widthIn(max = 320.dp)
                 .background(if (rider) colors.surfaceHigh else colors.surface, RoundedCornerShape(20.dp))
                 .padding(horizontal = Space.m, vertical = 12.dp)
                 .alpha(if (line.isFinal) 1f else 0.72f),
-        )
+            verticalArrangement = Arrangement.spacedBy(Space.xs),
+        ) {
+            val interrupted = if (line.interrupted) " — ${stringResource(R.string.interrupted)}" else ""
+            Text(line.text + interrupted, style = MaterialTheme.typography.bodyLarge, color = colors.ink)
+            if (subtitle != null) {
+                val description = stringResource(R.string.subtitle_description, subtitle)
+                Text(
+                    subtitle,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = colors.inkSecondary,
+                    modifier = Modifier.semantics { contentDescription = description },
+                )
+            }
+        }
     }
 }
 
-/** One quiet line ("Safety setup · 2 to fix"); tap to see and fix each item. */
+/**
+ * One quiet line ("Safety setup · 2 things to fix"); tap the card to see and fix each item. In
+ * the ride's sheet it starts open.
+ */
 @Composable
-private fun SetupCard(issues: List<SetupIssue>, onFix: (SetupIssue) -> Unit, onDismiss: () -> Unit) {
+private fun SetupCard(
+    issues: List<SetupIssue>,
+    onFix: (SetupIssue) -> Unit,
+    initiallyOpen: Boolean = false,
+    onDismiss: (() -> Unit)?,
+) {
     val colors = Pillion.colors
-    var open by rememberSaveable { mutableStateOf(false) }
-    PillionCard {
+    var open by rememberSaveable { mutableStateOf(initiallyOpen) }
+    val collapsible = !initiallyOpen
+    PillionCard(
+        onClick = if (!open) ({ open = true }) else null,
+        onClickLabel = stringResource(R.string.expand),
+    ) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
                 .clip(MaterialTheme.shapes.medium)
-                .clickable(onClickLabel = stringResource(if (open) R.string.collapse else R.string.expand)) { open = !open },
+                .then(
+                    if (open && collapsible) {
+                        Modifier.clickable(onClickLabel = stringResource(R.string.collapse)) { open = false }
+                    } else {
+                        Modifier
+                    }
+                ),
             horizontalArrangement = Arrangement.spacedBy(14.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
@@ -941,12 +1103,14 @@ private fun SetupCard(issues: List<SetupIssue>, onFix: (SetupIssue) -> Unit, onD
                     color = colors.inkSecondary,
                 )
             }
-            Icon(
-                painterResource(if (open) R.drawable.ic_expand_less else R.drawable.ic_expand_more),
-                contentDescription = null,
-                tint = colors.ink,
-                modifier = Modifier.size(24.dp),
-            )
+            if (collapsible) {
+                Icon(
+                    painterResource(if (open) R.drawable.ic_expand_less else R.drawable.ic_expand_more),
+                    contentDescription = null,
+                    tint = colors.ink,
+                    modifier = Modifier.size(24.dp),
+                )
+            }
         }
         if (!open) return@PillionCard
         Text(stringResource(R.string.setup_body), style = MaterialTheme.typography.bodyMedium, color = colors.inkSecondary)
@@ -971,8 +1135,10 @@ private fun SetupCard(issues: List<SetupIssue>, onFix: (SetupIssue) -> Unit, onD
                 PillButton(stringResource(action), onClick = { onFix(issue) }, minHeight = 48.dp, container = colors.surfaceHigh, content = colors.ink)
             }
         }
-        TextButton(onClick = onDismiss, modifier = Modifier.align(Alignment.End)) {
-            Text(stringResource(R.string.dismiss), color = colors.inkSecondary)
+        if (onDismiss != null) {
+            TextButton(onClick = onDismiss, modifier = Modifier.align(Alignment.End)) {
+                Text(stringResource(R.string.dismiss), color = colors.inkSecondary)
+            }
         }
     }
 }
@@ -1057,7 +1223,7 @@ private fun Context.safetySetupIssues(contactCount: Int): List<SetupIssue> = bui
 }
 
 // Realme, OPPO and OnePlus (ColorOS) stop background apps beyond Android's own battery optimisation.
-private fun isColorOsFamily() = Build.MANUFACTURER.lowercase() in setOf("realme", "oppo", "oneplus")
+internal fun isColorOsFamily() = Build.MANUFACTURER.lowercase() in setOf("realme", "oppo", "oneplus")
 
 private fun Context.granted(permission: String) =
     ContextCompat.checkSelfPermission(this, permission) == PackageManager.PERMISSION_GRANTED

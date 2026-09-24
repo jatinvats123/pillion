@@ -36,6 +36,8 @@ data class PillionColors(
     val speakingGlow: Color,
     val offlineGlow: Color,
     val alertGlow: Color,
+    /** Neutral chart bars (3:1 against cards). */
+    val chartBar: Color,
     /** Text colours for done / failed / needs-a-check. */
     val success: Color,
     val danger: Color,
@@ -64,6 +66,7 @@ val LightColors = PillionColors(
     speakingGlow = Color(0xFF8EDB7A),
     offlineGlow = Color(0xFFD3CFC7),
     alertGlow = Color(0xFFFF8A3D),
+    chartBar = Color(0xFF8F8A81),
     success = Color(0xFF17735C),
     danger = Color(0xFFB42318),
     caution = Color(0xFF8A5300),
@@ -90,6 +93,7 @@ val DarkColors = PillionColors(
     speakingGlow = Color(0xFF8EDB7A),
     offlineGlow = Color(0xFFB5B0A6),
     alertGlow = Color(0xFFFF8A3D),
+    chartBar = Color(0xFF7D786F),
     success = Color(0xFF5FD4B4),
     danger = Color(0xFFFF8A7F),
     caution = Color(0xFFFFC94D),

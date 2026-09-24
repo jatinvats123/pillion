@@ -11,20 +11,20 @@ import androidx.camera.core.resolutionselector.ResolutionStrategy
 import androidx.camera.view.CameraController
 import androidx.camera.view.LifecycleCameraController
 import androidx.camera.view.PreviewView
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawingPadding
-import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.Button
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
@@ -36,8 +36,10 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.content.ContextCompat
@@ -45,6 +47,9 @@ import androidx.lifecycle.compose.LocalLifecycleOwner
 import app.pillion.R
 import app.pillion.order.LoadedImage
 import app.pillion.order.ScanSource
+import app.pillion.ui.components.RoundIconButton
+import app.pillion.ui.theme.Space
+import app.pillion.ui.theme.Targets
 import java.util.concurrent.Executors
 
 /**
@@ -92,15 +97,23 @@ fun OrderCameraRoute(onCaptured: (ScanSource, suspend () -> LoadedImage) -> Unit
                 style = MaterialTheme.typography.titleMedium,
                 color = Color.White,
                 modifier = Modifier
-                    .background(Color.Black.copy(alpha = 0.6f), RoundedCornerShape(12.dp))
-                    .padding(horizontal = 14.dp, vertical = 10.dp)
+                    .background(Color.Black.copy(alpha = 0.6f), CircleShape)
+                    .padding(horizontal = 18.dp, vertical = 10.dp)
                     .align(Alignment.CenterHorizontally),
             )
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                OutlinedButton(onClick = onClose, modifier = Modifier.weight(1f).height(72.dp)) {
-                    Text(stringResource(R.string.cancel), color = Color.White, style = MaterialTheme.typography.titleMedium)
-                }
-                Button(
+            // A camera's own layout: close on the left, one big round shutter in the middle.
+            Box(Modifier.fillMaxWidth().padding(bottom = Space.m), contentAlignment = Alignment.Center) {
+                RoundIconButton(
+                    R.drawable.ic_close,
+                    stringResource(R.string.cancel),
+                    onClick = onClose,
+                    size = Targets.rideSmall,
+                    container = Color.Black.copy(alpha = 0.6f),
+                    content = Color.White,
+                    modifier = Modifier.align(Alignment.CenterStart),
+                )
+                val scanLabel = stringResource(R.string.camera_capture)
+                Surface(
                     onClick = {
                         capturing = true
                         controller.takePicture(executor, object : ImageCapture.OnImageCapturedCallback() {
@@ -119,9 +132,16 @@ fun OrderCameraRoute(onCaptured: (ScanSource, suspend () -> LoadedImage) -> Unit
                         })
                     },
                     enabled = !capturing,
-                    modifier = Modifier.weight(2f).height(72.dp),
+                    shape = CircleShape,
+                    color = Color.White.copy(alpha = if (capturing) 0.5f else 1f),
+                    border = BorderStroke(4.dp, Color.Black.copy(alpha = 0.35f)),
+                    modifier = Modifier
+                        .size(Targets.ride)
+                        .semantics { contentDescription = scanLabel },
                 ) {
-                    Text(stringResource(R.string.camera_capture), style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+                    Box(contentAlignment = Alignment.Center) {
+                        Icon(painterResource(R.drawable.ic_document_scanner), contentDescription = null, tint = Color.Black, modifier = Modifier.size(34.dp))
+                    }
                 }
             }
         }

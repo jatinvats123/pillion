@@ -12,7 +12,6 @@
     <string name="status_thinking">Thinking</string>
     <string name="status_speaking">Speaking</string>
     <string name="status_reconnecting">Reconnecting</string>
-    <string name="status_ended">Ended</string>
     <string name="status_voice_offline">Voice offline</string>
 
     <string name="status_mic_off">Mic off</string>
@@ -32,7 +31,6 @@
     <string name="nav_safety">Safety</string>
     <string name="settings">Settings</string>
     <string name="debug_tools">Debug tools</string>
-    <string name="order_button">Current order</string>
     <string name="safety_alert_banner">Safety alert on · Open</string>
     <string name="transcript_title">Conversation</string>
     <string name="transcript_expand">show the whole conversation</string>
@@ -60,11 +58,89 @@
     <string name="expand">show</string>
     <string name="collapse">hide</string>
 
+    <string name="scan_order_button">Scan order</string>
+    <string name="subtitle_description">English: %1$s</string>
+    <string name="action_reminder">Reminder</string>
+    <string name="setup_open">open safety setup</string>
+    <string name="done">Done</string>
+    <string name="mute_label_off">Mute</string>
+    <string name="mute_label_on">Muted</string>
+    <string name="order_number_description">Customer number, starts %1$s</string>
+
+    <!-- Trip summary -->
+    <string name="summary_title">Ride done</string>
+    <string name="summary_ride_time">on the road</string>
+    <string name="summary_under_minute">Under a minute</string>
+    <plurals name="minutes">
+        <item quantity="one">%1$d min</item>
+        <item quantity="other">%1$d min</item>
+    </plurals>
+    <string name="summary_order">Order</string>
+    <string name="summary_earned">Earned</string>
+    <string name="summary_no_earning">No earning was entered for this order (optional on the order card).</string>
+    <string name="summary_demo_note">Demo order: the earning is its sample payout.</string>
+    <string name="summary_safety">Safety</string>
+    <string name="summary_no_events">No safety events on this ride.</string>
+
+    <!-- Earnings -->
+    <string name="earnings_week">Last 7 days</string>
+    <string name="earnings_sample_note">Includes sample history (demo data seeded on first launch).</string>
+    <string name="earnings_bar_description">%1$s: %2$s, %3$s</string>
+    <string name="earnings_show_day">show this day</string>
+    <string name="earnings_no_trips">No trips on this day.</string>
+    <string name="today_short">Today</string>
+    <string name="today_title">Today</string>
+    <string name="today_at">Today %1$s</string>
+    <string name="yesterday_at">Yesterday %1$s</string>
+
+    <!-- Safety log -->
+    <string name="safety_log_title">Safety log</string>
+    <string name="safety_log_empty">No safety events yet.</string>
+    <string name="sample">Sample</string>
+    <string name="event_crash_detected">Crash detected</string>
+    <string name="event_crash_cancelled">Crash check: rider OK</string>
+    <string name="event_manual_sos">SOS started</string>
+    <string name="event_sos_cancelled">SOS cancelled</string>
+    <string name="event_sos_sent">SOS sent</string>
+    <string name="event_sos_failed">SOS not sent</string>
+    <string name="event_sos_ended">SOS ended: rider OK</string>
+    <string name="event_fatigue">Break reminder</string>
+    <string name="event_hard_brake">Hard braking</string>
+    <string name="event_fall_check">Fall check</string>
+    <string name="event_other">Safety event</string>
+
     <!-- Settings -->
+    <string name="settings_name">Your name</string>
+    <string name="settings_name_field">Name</string>
     <string name="settings_theme">Theme</string>
     <string name="theme_system">System</string>
     <string name="theme_light">Light</string>
     <string name="theme_dark">Dark</string>
+    <string name="settings_theme_note">During a ride after sunset the ride screen is always dark, to avoid glare.</string>
+    <string name="settings_subtitles">English subtitles</string>
+    <string name="settings_subtitles_switch">Show English under Hindi lines</string>
+    <string name="settings_subtitles_note">Translated by Sarvam through the Pillion server. Off saves those calls; the voice is unchanged.</string>
+    <string name="settings_battery">Battery</string>
+    <string name="settings_battery_ok">Battery optimisation is off for Pillion: crash detection keeps running with the screen off.</string>
+    <string name="settings_about">About</string>
+    <string name="settings_version">Pillion %1$s</string>
+    <string name="settings_about_body">Built for the Agora Voice AI Hackathon. Voice by Agora Conversational AI, speech by Sarvam, answers by gpt-4o-mini. Crash detection, SOS and order scan run on this phone.</string>
+    <string name="settings_licences">Fonts: Inter and Noto Sans Devanagari (SIL Open Font License 1.1). Icons: Material Symbols (Apache 2.0).</string>
+    <string name="settings_debug">Debug build</string>
+    <string name="settings_debug_backend">Backend: %1$s</string>
+    <string name="settings_debug_first_run">Show the welcome screen again</string>
+
+    <!-- First run -->
+    <string name="first_run_title">Namaste! I\'m Pillion.</string>
+    <string name="first_run_body">I ride with you: ask me the next drop, text the customer, or call for help, in Hindi, English or Hinglish. Hands on the handlebar.</string>
+    <string name="first_run_name">Your name</string>
+    <string name="first_run_name_note">Used in the greeting and in the SOS message to your contacts.</string>
+    <string name="first_run_add_contact">Add an emergency contact</string>
+    <string name="first_run_add_another">Add another contact</string>
+    <string name="first_run_contact_added">%1$s will get your SOS</string>
+    <string name="first_run_contact_note">If I detect a crash and you don\'t answer, they get an SMS with your location. Stored only on this phone.</string>
+    <string name="first_run_continue">Let\'s ride</string>
+    <string name="first_run_skip">Skip for now</string>
 
     <string name="speaker_rider">You</string>
     <string name="speaker_pillion">Pillion</string>
@@ -99,14 +175,11 @@
     <!-- Ride screen: safety -->
     <string name="sos_button">SOS</string>
     <string name="sos_button_description">SOS: text your emergency contacts your location after 5 seconds</string>
-    <string name="safety_button">Safety</string>
     <string name="voice_offline_title">Pillion\'s voice is offline</string>
     <string name="voice_offline_body">%1$s Crash detection and SOS still work.</string>
     <string name="retry_voice">Retry voice</string>
     <string name="gps_unavailable_title">No GPS signal</string>
     <string name="gps_unavailable_body">Crash detection now needs a harder impact, and an SOS would send your last known location.</string>
-    <string name="safety_alert_active">A safety alert is on</string>
-    <string name="open">Open</string>
     <string name="setup_title">Safety setup</string>
     <string name="setup_no_contacts">Add an emergency contact, or SOS can\'t reach anyone.</string>
     <string name="setup_sms">Allow SMS so the SOS can reach your contacts.</string>
@@ -138,7 +211,7 @@
     <string name="alert_im_ok">I\'M OK\nमैं ठीक हूँ</string>
     <string name="alert_cancel_sos">CANCEL SOS\nरद्द करें</string>
     <string name="alert_im_ok_now">I\'M OK NOW\nअब मैं ठीक हूँ</string>
-    <string name="alert_send_now">Send SOS now</string>
+    <string name="alert_send_now">Send help now</string>
     <string name="alert_sos_sent_title">SOS sent</string>
     <string name="alert_sos_not_sent_title">SOS not sent</string>
     <string name="alert_problem_no_contacts">No emergency contact: the SOS can\'t be sent. Call 112.</string>
@@ -165,7 +238,6 @@
     <!-- Safety settings -->
     <string name="back">Back</string>
     <string name="safety_title">Safety</string>
-    <string name="safety_name_label">Your name (used in the SOS message)</string>
     <string name="safety_contacts_title">Emergency contacts</string>
     <string name="safety_contacts_body">Up to 3. If Pillion detects a crash and you don\'t answer, or you ask for help, they get an SMS with your location. Stored only on this phone.</string>
     <string name="safety_add_contact">Add from contacts</string>
@@ -173,9 +245,6 @@
     <string name="safety_contact_exists">That number is already on the list.</string>
     <string name="safety_contact_no_number">Couldn\'t read a phone number for that contact.</string>
     <string name="safety_first_contact">Texted and called first</string>
-    <string name="move_up">Up</string>
-    <string name="move_down">Down</string>
-    <string name="remove">Remove</string>
     <string name="move_up_description">Move %1$s up</string>
     <string name="move_down_description">Move %1$s down</string>
     <string name="remove_description">Remove %1$s</string>

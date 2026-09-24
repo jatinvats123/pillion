@@ -10,6 +10,7 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.annotation.DrawableRes
 import androidx.annotation.StringRes
+import androidx.compose.foundation.background
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -40,12 +41,14 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import app.pillion.data.ThemeMode
 import app.pillion.device.RiderLocation
+import app.pillion.order.ScanState
 import app.pillion.ui.EarningsRoute
+import app.pillion.ui.FirstRunRoute
 import app.pillion.ui.OrderCameraRoute
 import app.pillion.ui.RideRoute
 import app.pillion.ui.RideStatus
 import app.pillion.ui.RideViewModel
-import app.pillion.ui.SafetySettingsRoute
+import app.pillion.ui.SafetyRoute
 import app.pillion.ui.SettingsRoute
 import app.pillion.ui.theme.DEFAULT_LAT
 import app.pillion.ui.theme.DEFAULT_LNG
@@ -91,8 +94,18 @@ class MainActivity : ComponentActivity() {
                     navigationBarStyle = SystemBarStyle.auto(LIGHT_NAV_SCRIM, DARK_NAV_SCRIM) { dark },
                 )
             }
+            val firstRunDone by prefs.firstRunDone.collectAsStateWithLifecycle()
+            val scanState by pillion.scanner.state.collectAsStateWithLifecycle()
             PillionTheme(dark = dark) {
-                val tabs = screen in TABS && !inRide
+                // The welcome screen, once; never in the way of a ride or a shared order screenshot.
+                if (!firstRunDone && !inRide && scanState == ScanState.Idle && screen != Screen.Camera) {
+                    Box(Modifier.fillMaxSize().background(Pillion.colors.background)) {
+                        FirstRunRoute(onDone = { prefs.setFirstRunDone(true) })
+                    }
+                    return@PillionTheme
+                }
+                // No tabs during a ride or while a scanned order is checked: one task on screen.
+                val tabs = screen in TABS && !inRide && scanState == ScanState.Idle
                 BackHandler(enabled = screen == Screen.Earnings) { screen = Screen.Ride }
                 Scaffold(
                     containerColor = Pillion.colors.background,
@@ -113,8 +126,8 @@ class MainActivity : ComponentActivity() {
                                 onOpenSettings = ::openSettings,
                                 viewModel = ride,
                             )
-                            Screen.Earnings -> EarningsRoute()
-                            Screen.Safety -> SafetySettingsRoute(onBack = { screen = Screen.Ride })
+                            Screen.Earnings -> EarningsRoute(onOpenSettings = ::openSettings)
+                            Screen.Safety -> SafetyRoute(onBack = { screen = Screen.Ride }, onOpenSettings = ::openSettings)
                             Screen.Settings -> SettingsRoute(onBack = { screen = lastTab })
                             Screen.Camera -> OrderCameraRoute(
                                 onCaptured = { source, load ->

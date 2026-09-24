@@ -78,6 +78,11 @@ class BackendApi(
         post("/ride/say", JSONObject().put("text", text).put("interrupt", interrupt), rideToken, connectTimeoutMs = 2_000, readTimeoutMs = 3_000)
     }
 
+    /** English for a Hindi transcript line (Sarvam, via the backend). Display-only, so short timeouts. */
+    suspend fun translate(rideToken: String, text: String): String =
+        post("/ride/translate", JSONObject().put("text", text), rideToken, connectTimeoutMs = 2_000, readTimeoutMs = 4_000)
+            .getString("english")
+
     /**
      * Where a scanned drop address is on the map: `{ status: found | approximate | ambiguous |
      * not_found, lat, lng, area }`. Needs no ride (riders scan before starting); [near] is the

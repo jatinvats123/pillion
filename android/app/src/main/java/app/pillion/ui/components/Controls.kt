@@ -27,6 +27,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.liveRegion
+import androidx.compose.ui.semantics.onClick
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.style.TextAlign
@@ -97,13 +98,13 @@ fun PillButton(
     }
 }
 
-/** A pushed screen's title row: round back button and a heading. */
+/** A screen's title row: round back button (pushed screens), a heading, and settings (tabs). */
 @Composable
-fun ScreenHeader(title: String, onBack: (() -> Unit)? = null) {
+fun ScreenHeader(title: String, onBack: (() -> Unit)? = null, onOpenSettings: (() -> Unit)? = null) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(start = if (onBack != null) Space.m else Space.gutter, end = Space.gutter, top = Space.s, bottom = Space.s),
+            .padding(start = if (onBack != null) Space.m else Space.gutter, end = if (onOpenSettings != null) Space.m else Space.gutter, top = Space.s, bottom = Space.s),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(Space.m),
     ) {
@@ -112,8 +113,11 @@ fun ScreenHeader(title: String, onBack: (() -> Unit)? = null) {
             title,
             style = MaterialTheme.typography.headlineMedium,
             color = Pillion.colors.ink,
-            modifier = Modifier.semantics { heading() },
+            modifier = Modifier
+                .weight(1f)
+                .semantics { heading() },
         )
+        if (onOpenSettings != null) RoundIconButton(R.drawable.ic_settings, stringResource(R.string.settings), onOpenSettings)
     }
 }
 
@@ -158,17 +162,36 @@ fun Tag(text: String, modifier: Modifier = Modifier) {
     )
 }
 
-/** Cards: 28 dp corners, a hairline edge in the light theme instead of a shadow. */
+/**
+ * Cards: 28 dp corners, a hairline edge in the light theme instead of a shadow. With [onClick]
+ * the whole card is the target, and its press/focus feedback follows the rounded shape.
+ */
 @Composable
-fun PillionCard(modifier: Modifier = Modifier, content: @Composable ColumnScope.() -> Unit) {
+fun PillionCard(
+    modifier: Modifier = Modifier,
+    onClick: (() -> Unit)? = null,
+    onClickLabel: String? = null,
+    content: @Composable ColumnScope.() -> Unit,
+) {
     val colors = Pillion.colors
-    Surface(
-        shape = MaterialTheme.shapes.large,
-        color = colors.surface,
-        border = if (colors.isDark) null else BorderStroke(1.dp, colors.hairline),
-        modifier = modifier.fillMaxWidth(),
-    ) {
+    val shape = MaterialTheme.shapes.large
+    val border = if (colors.isDark) null else BorderStroke(1.dp, colors.hairline)
+    val body = @Composable {
         Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(Space.s), content = content)
+    }
+    if (onClick == null) {
+        Surface(shape = shape, color = colors.surface, border = border, modifier = modifier.fillMaxWidth(), content = body)
+    } else {
+        Surface(
+            onClick = onClick,
+            shape = shape,
+            color = colors.surface,
+            border = border,
+            modifier = modifier
+                .fillMaxWidth()
+                .semantics { onClickLabel?.let { onClick(label = it) { onClick(); true } } },
+            content = body,
+        )
     }
 }
 

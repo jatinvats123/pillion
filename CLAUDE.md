@@ -16,6 +16,7 @@ A native Android app for India's delivery, bike-taxi and rental riders who can't
 - **Actions**: Agora ConvoAI custom tools (`llm.tools`, v2.12) → backend `/tools/*` over cloudflared → phone via server-sent RTM messages. Jev (TypeSafe AI, via jevai.org) reads each rider turn alongside the LLM.
 - **Safety** (Phase 3, `android/.../safety/`): on-device crash detection (accelerometer + gyroscope + GPS speed), "are you OK?" check, SOS by SMS over the SIM, fatigue reminder. Needs neither the backend nor the internet; Agora's speak API voices the check when connected.
 - **Order scan** (Phase 4, `android/.../order/`): the active order (customer name, number, drop address) is read from the delivery app's order screen with on-device OCR (ML Kit Text Recognition v2, bundled Devanagari model, which also reads Latin) and a pure-Kotlin parser (`OrderParser`). Inputs: a screenshot shared to Pillion, the system photo picker, or a CameraX photo. The rider confirms it on an editable card; the drop is geocoded through the backend.
+- **UI** (Phase 5, `android/.../ui/theme/`, `ui/components/`): own design system on plain Material 3 (tokens below), Inter + Noto Sans Devanagari bundled, Material Symbols Rounded as vector drawables, the orb (Canvas, Android 11-safe), tabs Ride · Earnings · Safety + Settings. English subtitles for Hindi lines via Sarvam translate through the backend (`/ride/translate`).
 - **Maps**: `MAPS_PROVIDER=geoapify` (default; free, OpenStreetMap data, motorcycle mode) or `google` (Routes + Places (New), TWO_WHEELER, live traffic; blocked on Google Cloud billing verification for now). Same interface in `backend/src/maps/`.
 - **Dev machine**: Windows 11 (PowerShell). Test devices: Realme 5 Pro (Android 11) and the `Pixel_8d` emulator (API 36).
 
@@ -29,6 +30,7 @@ A native Android app for India's delivery, bike-taxi and rental riders who can't
 6. App posts each final rider transcript to `POST /ride/turn`; Jev classifies it (intent + "is this a yes?") and prefetches the data the LLM is about to ask for. Per-turn `[jev]` and `[tool]` lines in the backend log show routing, agreement with the LLM and timing.
 7. Order scan (on the phone): "Share → Pillion: scan order" (`ShareOrderActivity`, no window), the photo picker or the camera → `OrderScanner` (ML Kit OCR in memory, image not kept) → `OrderParser` → confirm card → `ActiveOrderSource` (SharedPreferences, phone only) → `POST /order/geocode` (local network only; PIN code / locality checks) → the order reply to the ETA tool carries the drop's point. During a ride Pillion confirms by voice via `/ride/say` (Agora speak). Logcat tag `OrderScan` (debug builds log the OCR text).
 8. Safety (on the phone): Start Ride starts `RideService` (sensors → `CrashDetector` on a background thread) and `SafetyMonitor` first, then tries the voice. Crash → siren + vibration, full-screen alert over the lock screen, "Aap theek ho?" via `POST /ride/say` → Agora speak API (or Android TTS), 20 s countdown; the rider's final transcripts are classified on the phone (`SafetyPhrases`). No answer / "help" → SMS to emergency contacts. Voice SOS: `sendSos` custom tool → phone starts a 5 s countdown. Logcat tags `Safety`, `SafetySensors`.
+9. Subtitles (display-only): each final transcript line with Devanagari → `POST /ride/translate` (ride token) → Sarvam `sarvam-translate:v1` hi-IN → en-IN (cached) → shown under the line. Off in Settings; a failure shows the line alone. Backend log `[translate]`.
 
 ## Feature roadmap
 
@@ -51,7 +53,7 @@ They care about: deep Agora usage (not a re-skinned sample), production-quality 
 - Keep code minimal and readable; no unrequested abstractions or libraries.
 - Never commit secrets. All keys live in `backend/.env` (gitignored). Nothing secret in the Android app.
 - Android must feel production-quality: proper permissions, no crashes, smooth UI.
-- UI direction (to be finalised later): dark, bold, high-contrast, glanceable while riding; must NOT look like a generic AI-generated template.
+- UI direction (Phase 5, see "Design tokens"): minimal and calm, glanceable in one second on a moving bike, light and dark (dark on rides after sunset), one marigold accent, red only for safety, colour and motion only for state; must NOT look like a generic AI-generated template. Use the tokens and `ui/components` rather than raw colours or sizes.
 - Follow the Agora docs / SDK over assumptions; note any divergence.
 
 ## Running locally
@@ -102,7 +104,16 @@ They care about: deep Agora usage (not a re-skinned sample), production-quality 
 - **Scan while moving:** camera and photo picker are refused when a GPS fix ≤ 10 s old says ≥ 10 km/h (the ride polls GPS at 1 Hz); Pillion says "Bike रोककर order scan कीजिए।" if voice is on, else a card. Sharing a screenshot isn't gated (one tap from the delivery app). The prompt never suggests using the phone while moving.
 - **Setting an order:** active at once (SMS/call use it), then the drop lookup, then (ride + voice connected) Pillion says "Rahul का order set हो गया, drop Laxmi Nagar में।" (English if the rider's last words were English) via the Agora speak API, which also puts it in the LLM's history. Optional "Earning ₹" on the card, else the trip is logged at ₹0. "Use demo order" goes back to the seeded order (labelled "Demo order (sample)").
 - **Rides start only from a tap:** `StartGate` lets `startRide` through only after a tap on Start Ride (or Allow microphone on its card) in the last 2 min, once per tap; a share, activity re-creation or re-delivered permission result is refused (added after a ride started by itself once in the Phase 4 emulator test). Every call is logged with caller and call site: `adb logcat -s RideViewModel` ("startRide from … REFUSED" = something other than the rider tried).
-- **Branching:** Phase 4 is on `phase-4-order-scan`, cut from `phase-3-safety` (Phase 3 isn't on `main` yet). Merge Phase 3 first, or merge Phase 4 alone (it contains Phase 3).
+- **Branching:** Phase 4 is on `phase-4-order-scan`, cut from `phase-3-safety` (Phase 3 isn't on `main` yet). Merge Phase 3 first, or merge Phase 4 alone (it contains Phase 3). Phase 5 is on `phase-5-ui`, cut from `phase-4-order-scan` (contains 3 and 4); not merged.
+- **Phase 5 UI, no Material 3 Expressive:** the BOM's material3 is 1.4.0, where `MaterialExpressiveTheme` is experimental and `MotionScheme.expressive()` internal; upgrading to 1.5 just for it was ruled out. Plain `MaterialTheme` with our own tokens and springs.
+- **Fonts:** Inter + Noto Sans Devanagari (variable, OFL, `res/font`, licences in `assets/licenses`). Android 10+ joins them per character (`Typeface.CustomFallbackBuilder`, Inter first) through a custom `AndroidFont`; Android 8–9 get Inter + the system Devanagari font. Inter opsz 14 for text, 32 for display. The font files (1.5 MB) are read on a background thread at app start: on the emulator the first frame otherwise waited 467 ms for them. No letter spacing anywhere (breaks the Devanagari headline bar); line heights ≈ 1.4×.
+- **The orb** (`ui/components/Orb.kt`): layered radial/sweep gradients, no blur or shaders (same look on Android 11); brushes rebuilt only on size/colour change, per frame only translate/scale/rotate/alpha in its own `graphicsLayer`; its clock loops every 60 s with whole-number frequencies (no jump). Size and ripples follow Agora volume indication (rider's mic while listening, agent while speaking), smoothed by a spring. Moods: dormant (idle), connecting (grey warming to marigold), listening, thinking, speaking, offline/muted, alert (red, 1.6 Hz pulse). "Remove animations" → static. No AGSL variant (the Realme can't show it; one look everywhere).
+- **VoiceSession, Phase 5's one change there (additive):** volume indication on in all builds at 100 ms (was debug-only, 200 ms) → `riderLevel` / `agentLevel`; `setMicMuted` (`muteLocalAudioStream`, kept across a voice reconnect). The latency tracker is unchanged (debug-only, now 100 ms VAD resolution). The ViewModel unmutes when a safety alert starts (the check needs the rider's voice) and at ride end.
+- **Layout rules:** tabs hidden during a ride and while a scanned order is checked; Settings from a small icon on each tab. Ride screen targets: Start/End Ride pill and SOS circle 88 dp, mute 76 dp, 24 dp gaps; at font scale > 1.3 the main button takes its own row. Idle: the orb takes only the height the cards leave (hidden below 96 dp), so the order card is never cut off. During a ride the safety setup card isn't shown; the "⚠ SOS not set up" chip in the conversation opens the fixes. Debug tools in a sheet behind a bug icon (debug builds).
+- **Dark at night:** during a ride, after sunset at the rider's last fix (NOAA equations, `Daylight.kt`, tested; Delhi if no fix, re-checked every minute) the whole app is dark whatever the theme setting. Otherwise System / Light / Dark from Settings.
+- **Customer number masked on screen** ("98113 •••••", `order/PhoneMask.kt`, tested) on the order card and the review's number chips; SMS/call and the editable review field use the full number. Emergency contacts (the rider's own) stay in full.
+- **Subtitles: Sarvam, not Agora.** ConvoAI can't translate its transcripts; Agora Real-Time STT translation would run a second recogniser (bots in the channel, data-stream protobuf, separate billing) whose captions could disagree with the Sarvam transcript the LLM saw. `sarvam-translate:v1` measured 0.65–1.0 s from India (backend → Sarvam) and handled Hinglish; `mayura:v1` took 1.2–1.6 s and garbled "Rahul का order set हो गया". Only final lines with Devanagari; one call per distinct line; a line final before the voice's credentials arrive is picked up when they do.
+- **Trip summary:** duration, the order and its payout (the ride is logged as one trip, as before), safety events in the ride's window. No distance: only the safety code sees GPS.
 - Fatigue: 120 min continuous riding (stops < 10 min don't reset it, a longer stop does), repeated every 30 min; without GPS the ride time counts. Debug switch: 2 min.
 
 ## Later phases (agreed)
@@ -143,6 +154,7 @@ Turn detection 640→400 ms: the part before the final transcript (end-of-speech
 16. Speak API (`AgentSession.say` → `/speak`, priority `INTERRUPT`, `interruptable: false`): 620 ms per REST call from India, and the text **is added to the LLM history** as an assistant turn (checked with `/debug/history`), so the LLM understands the rider's answer to "Aap theek ho?". The docs don't say either way.
 17. Speak is server-side REST only (needs the app certificate / customer credentials), so a phone can't make its own agent speak without a backend round trip; for safety the app falls back to Android TTS.
 18. Filler words also play on the `sendSos` tool turn ("जांच कर रहा हूँ" before the SOS line): no per-tool control (see 10).
+19. ConvoAI has no translation of its own transcripts; Real-Time STT translation is a separate product with its own recogniser, so English subtitles of what the agent heard need a separate translate call (we use Sarvam).
 
 ## Order scan: known limits (for the README)
 
@@ -181,7 +193,37 @@ Validated on synthetic traces only (unit tests, 5 noise seeds each, `CrashDetect
   - Jev switched back on afterwards; a live call answered "Aaj kitna kamaya?" → earnings, confidence 1.00, 0.67 s (the call before it hit the 1.5 s timeout and was skipped, as designed).
 - The per-turn `[latency]` e2e on tool turns (3.1–3.3 s here) measures the first audio, which is the filler ("जांच कर रहा हूँ"); the real answer follows ~1–1.5 s later.
 
+## Design tokens (Phase 5)
+
+`ui/theme/Color.kt`, `Type.kt`, `Tokens.kt`. Every text pair ≥ 4.5:1 (measured); chart bars ≥ 3:1.
+
+| Token | Light | Dark |
+|---|---|---|
+| background / surface (cards) / surfaceHigh (chips, round buttons) | `#F6F3EE` / `#FFFDFA` / `#ECE8E1` | `#111110` / `#1B1A18` / `#272522` |
+| ink / secondary text / hairline | `#17150F` / `#5F5A51` / `#E3DED5` | `#F3F0EA` / `#A9A49A` / `#33302C` |
+| accent marigold (ink text on it) | `#F2A900` | `#FFB81F` |
+| listening / thinking / speaking / offline / alert | marigold / `#8C7AE6` / `#1FA88A` / `#9C978E` / `#D92D20` | marigold / `#A698FF` / `#3CCFAE` / `#7D786F` / `#FF5247` |
+| success / danger / caution text | `#17735C` / `#B42318` / `#8A5300` | `#5FD4B4` / `#FF8A7F` / `#FFC94D` |
+| crash screen | `#B3140F`, white text | same |
+
+- Material "primary" is ink (black buttons, readable text buttons); marigold is applied by hand (Start Ride, selected tab, listening, Set order). Red only for safety.
+- Type: ride latest line 34/48, older lines + subtitle 24/34, controls 22; headlines 32/28/24 (Inter opsz 32); titles 22/18/16; body 18/16; captions 14. Tabular figures on money, times, countdown.
+- Shapes: cards 28 dp, sheets 32, fields 20; buttons, chips and the pill fully round. 8 dp grid, 24 dp margins.
+- Motion: springs (damping 0.9, stiffness 600) for state, 250 ms colour fades, orb breath 6 s, alert pulse 1.6 Hz; "Remove animations" → snaps and a still orb.
+
+## Phase 5 device checks (to do on the Realme)
+
+- Orb smoothness on the Snapdragon 712 (listening/speaking levels, thinking swirl, alert pulse); no jank when the transcript updates.
+- Sunlight readability of the ride screen, light and dark; the night switch after sunset with real GPS.
+- Fonts: Hindi + English in one line (Devanagari fallback on Android 11), no clipped vowel signs; cold start time (debug and release).
+- Subtitles: latency under real Hindi turns, never delaying the voice; Settings switch off → no `[translate]` lines.
+- Mute: agent stops hearing, "Mic off" pill; a crash check unmutes.
+- 200% font and TalkBack on the phone; haptics on Start/End Ride and SOS.
+- Crash alert restyle over the ColorOS lock screen; first-run screen on a fresh install.
+
 ## Phase log
+
+- Phase 5 built on `phase-5-ui` (from `phase-4-order-scan`), **built, emulator-only**: design system (tokens, Inter + Noto Sans Devanagari, Material Symbols), orb, Ride screen idle/active (status pill, live transcript with the newest line largest, conversation sheet, action chips, End Ride / SOS / mute), trip summary, Earnings (7-day Canvas chart, day detail, sample-data note), Safety (contacts + safety log), Settings (name, theme, English subtitles switch, battery helper, about, debug), first run, restyled order card/review/camera and crash alert, masked customer number, dark after sunset, subtitles via `/ride/translate`. 93 unit tests (new: `DaylightTest`, `PhoneMaskTest`). Checked on the Pixel_8d emulator with the live backend and agent: first run, idle (both themes), ride start → greeting with subtitle (1.0 s), mute, conversation sheet, scan-order sheet, debug sheet, simulated crash → alert → SOS sent (emulator SMS) → I'M OK NOW, trip summary with the ride's safety events, Earnings day detail, Safety log, Settings theme switch, order review from a test image, camera screen, 200% font (controls wrap, nothing clipped), accessibility labels (uiautomator dump). Screenshots in `docs/screenshots/`.
 
 - Phase 4 emulator smoke test (Pixel_8d, API 36, 24 Sep 2026): Phase 3 still works (Safety screen, Voice offline with the backend stopped, Simulate crash → alert); all six mock screens parse correctly through real ML Kit OCR; share from Google Photos → "Pillion: scan order" → the existing ride screen (one MainActivity, ride kept running); photo picker; CameraX capture (virtual scene → "no order details"); geocode offline → "not checked", online → approximate/found; ETA on a scanned order via the live agent (think injection): "Next drop · 10.9 km · 38 min", said as "लगभग"; spoken confirmation via Agora speak; moving (37 km/h) → camera refused + spoken line. Not provable on the emulator: audio, real delivery apps, SMS/calls, real GPS speed. Seen once, not reproduced: a ride started by itself ~20 s after a shell-sent share (see the phone checklist).
 - Phase 4 built on `phase-4-order-scan` (from `phase-3-safety`), **built, not phone-tested**: order parser + 26 tests (clean, noisy OCR, layouts, Hinglish, Devanagari, masked, two numbers, missing address, two-column boxes), ML Kit OCR (bundled Devanagari+Latin), share / photo picker / CameraX inputs, speed gate, editable confirm card with number candidates and optional earning, `ActiveOrderSource` (demo fallback), drop geocoding with PIN code/locality checks (`/order/geocode`), ETA to the drop's point, `customer_number_masked` / `drop_location_unknown` tool errors, voice confirmation via Agora speak, debug mock screens + push script, release ABI filter.

@@ -24,6 +24,7 @@ import app.pillion.safety.SafetyState
 import app.pillion.safety.SosTrigger
 import app.pillion.voice.AgentState
 import app.pillion.voice.ConnectionState
+import app.pillion.voice.Speaker
 import app.pillion.voice.TranscriptLine
 import app.pillion.voice.VoiceEvent
 import app.pillion.voice.VoiceException
@@ -60,6 +61,11 @@ data class RideUiState(
             RideStatus.Speaking, RideStatus.Reconnecting, RideStatus.VoiceOffline,
         )
 }
+
+/** What the rider sees after End Ride: the ride is logged as one trip at the active order's payout. */
+data class TripSummary(val startedAt: Long, val endedAt: Long, val order: Order, val safetyEvents: List<EarningsDb.SafetyEvent>)
+
+private fun isDevanagari(char: Char) = char in 'ऀ'..'ॿ'
 
 /**
  * A ride = safety (crash detection, SOS, fatigue; on the phone, always on) + Pillion's voice
@@ -117,6 +123,16 @@ class RideViewModel(application: Application) : AndroidViewModel(application) {
     /** Today's trips and earnings, for the greeting. */
     val today: StateFlow<EarningsDb.DayTotal?> = _today.asStateFlow()
 
+    private val _tripSummary = MutableStateFlow<TripSummary?>(null)
+    /** The ride that just ended, shown until the rider taps Done. */
+    val tripSummary: StateFlow<TripSummary?> = _tripSummary.asStateFlow()
+
+    private val subtitlesOn = application.pillion.uiPrefs.subtitles
+    private val _subtitles = MutableStateFlow<Map<String, String>>(emptyMap())
+    /** English for Hindi transcript lines, by line text. Display-only: a missing one shows nothing. */
+    val subtitles: StateFlow<Map<String, String>> = _subtitles.asStateFlow()
+    private val subtitlesAsked = HashSet<String>()
+
     val uiState: StateFlow<RideUiState> = combine(
         phase, voice.connection, voice.agentState, voice.agentPresent, voice.transcript,
     ) { phase, connection, agentState, agentPresent, transcript ->
@@ -145,6 +161,10 @@ class RideViewModel(application: Application) : AndroidViewModel(application) {
         refreshToday()
         viewModelScope.launch {
             safety.actionLines.collect { voice.showActionLine(it.text, it.failed) }
+        }
+        // Subtitles run beside the voice loop, never in it: one backend call per final Hindi line.
+        viewModelScope.launch {
+            combine(voice.transcript, subtitlesOn) { lines, _ -> lines }.collect(::requestSubtitles)
         }
         viewModelScope.launch {
             voice.events.collect { event ->
@@ -187,6 +207,9 @@ class RideViewModel(application: Application) : AndroidViewModel(application) {
         Log.i(TAG, "startRide from $caller, $sinceRequest ms after the tap · $site")
         if (phase.value == Phase.Active || phase.value == Phase.Ending) return
         phase.value = Phase.Active
+        _tripSummary.value = null
+        _subtitles.value = emptyMap()
+        subtitlesAsked.clear()
         rideGeneration++
         rideStartedAt = System.currentTimeMillis()
         voice.clearTranscript()
@@ -214,6 +237,8 @@ class RideViewModel(application: Application) : AndroidViewModel(application) {
                     runCatching { repository.end(started.agentId) }
                 } else {
                     ride = started
+                    // The greeting can be final before this point: subtitle what's already there.
+                    requestSubtitles(voice.transcript.value)
                     rideServices = viewModelScope.launch { serveRide(started) }
                     safety.voice = repository.safetyVoice(started)
                 }
@@ -263,6 +288,29 @@ class RideViewModel(application: Application) : AndroidViewModel(application) {
     /** The rider's mute button: Pillion stops hearing them until they tap again. */
     fun setMicMuted(muted: Boolean) {
         viewModelScope.launch { voice.setMicMuted(muted) }
+    }
+
+    fun dismissTripSummary() {
+        _tripSummary.value = null
+    }
+
+    /** Asks once for each final Hindi line; called on every transcript change and when the voice connects. */
+    private fun requestSubtitles(lines: List<TranscriptLine>) {
+        val current = ride ?: return
+        if (!subtitlesOn.value) return
+        lines.filter { it.isFinal && it.speaker != Speaker.Action && it.text.any(::isDevanagari) && subtitlesAsked.add(it.text) }
+            .forEach { line -> viewModelScope.launch { translate(current, line.text) } }
+    }
+
+    private suspend fun translate(ride: RideCredentials, text: String) {
+        try {
+            val english = repository.translate(ride, text)
+            _subtitles.value = _subtitles.value + (text to english)
+        } catch (error: CancellationException) {
+            throw error
+        } catch (error: Exception) {
+            Log.d(TAG, "No subtitle (${error.message}); the line shows as is")
+        }
     }
 
     fun refreshToday() {
@@ -357,9 +405,13 @@ class RideViewModel(application: Application) : AndroidViewModel(application) {
         safety.voice = null
         safety.onRideEnded() // stops the ride service and its sensors
         val startedAt = rideStartedAt
+        val order = repository.orders.order.value
         viewModelScope.launch {
-            runCatching { repository.recordTrip(startedAt, System.currentTimeMillis()) }
+            val endedAt = System.currentTimeMillis()
+            runCatching { repository.recordTrip(startedAt, endedAt) }
                 .onFailure { Log.w(TAG, "Trip not recorded", it) }
+            val events = withContext(Dispatchers.IO) { runCatching { db.safetyEvents(startedAt, endedAt + 1) }.getOrDefault(emptyList()) }
+            _tripSummary.value = TripSummary(startedAt, endedAt, order, events)
             refreshToday()
             voice.setMicMuted(false)
             if (current != null) {

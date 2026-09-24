@@ -7,21 +7,18 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.Button
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.FilterChip
+import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -37,9 +34,9 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import app.pillion.R
@@ -53,6 +50,8 @@ import app.pillion.order.OrderDraft
 import app.pillion.order.ScanFailure
 import app.pillion.order.ScanSource
 import app.pillion.order.ScanState
+import app.pillion.order.maskPhone
+import app.pillion.order.maskedPhoneDigits
 import app.pillion.ui.components.PillButton
 import app.pillion.ui.components.PillionCard
 import app.pillion.ui.components.Tag
@@ -81,15 +80,20 @@ fun ActiveOrderCard(
         if (order.customerName.isNotBlank()) {
             Text(order.customerName, style = MaterialTheme.typography.titleLarge, color = colors.ink)
         }
-        if (order.dropArea.isNotBlank()) OrderDetail(R.drawable.ic_location_on, order.dropArea)
-        OrderDetail(
-            R.drawable.ic_call,
-            when {
-                order.customerPhone.isNotBlank() -> order.customerPhone
-                order.phoneMasked -> stringResource(R.string.order_number_masked)
-                else -> stringResource(R.string.order_no_number)
-            },
-        )
+        FlowRow(horizontalArrangement = Arrangement.spacedBy(Space.m), verticalArrangement = Arrangement.spacedBy(Space.xs)) {
+            if (order.dropArea.isNotBlank()) OrderDetail(R.drawable.ic_location_on, order.dropArea)
+            val phoneDescription = stringResource(R.string.order_number_description, maskedPhoneDigits(order.customerPhone))
+            OrderDetail(
+                R.drawable.ic_call,
+                when {
+                    // Masked on screen; SMS and calls still use the full number.
+                    order.customerPhone.isNotBlank() -> maskPhone(order.customerPhone)
+                    order.phoneMasked -> stringResource(R.string.order_number_masked)
+                    else -> stringResource(R.string.order_no_number)
+                },
+                description = phoneDescription.takeIf { order.customerPhone.isNotBlank() },
+            )
+        }
         if (!order.isDemo) {
             val notFound = !locatingDrop && order.drop == DropLocation.NotFound
             OrderDetail(
@@ -109,7 +113,7 @@ fun ActiveOrderCard(
             )
         }
         FlowRow(
-            modifier = Modifier.padding(top = Space.s),
+            modifier = Modifier.padding(top = Space.xs),
             horizontalArrangement = Arrangement.spacedBy(Space.s),
             verticalArrangement = Arrangement.spacedBy(Space.s),
         ) {
@@ -122,14 +126,18 @@ fun ActiveOrderCard(
 }
 
 @Composable
-private fun OrderDetail(@DrawableRes icon: Int, text: String, color: Color = Pillion.colors.inkSecondary) {
-    Row(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.Top) {
+private fun OrderDetail(@DrawableRes icon: Int, text: String, color: Color = Pillion.colors.inkSecondary, description: String? = null) {
+    Row(
+        modifier = if (description != null) Modifier.semantics(mergeDescendants = true) { contentDescription = description } else Modifier,
+        horizontalArrangement = Arrangement.spacedBy(Space.s),
+        verticalAlignment = Alignment.Top,
+    ) {
         Icon(painterResource(icon), contentDescription = null, tint = color, modifier = Modifier.padding(top = 2.dp).size(20.dp))
         Text(text, style = MaterialTheme.typography.bodyMedium, color = color)
     }
 }
 
-/** Replaces the transcript while an order is read or checked. */
+/** Replaces the ride screen's main area while an order is read or checked. */
 @Composable
 fun OrderScanPanel(
     state: ScanState,
@@ -138,33 +146,37 @@ fun OrderScanPanel(
     onDismiss: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    val colors = Pillion.colors
     Column(
         modifier = modifier
             .fillMaxWidth()
-            .verticalScroll(rememberScrollState()),
-        verticalArrangement = Arrangement.spacedBy(12.dp),
+            .verticalScroll(rememberScrollState())
+            .padding(bottom = Space.m),
+        verticalArrangement = Arrangement.spacedBy(Space.m),
     ) {
         when (state) {
             ScanState.Idle -> Unit
-            ScanState.Reading -> Row(
-                modifier = Modifier.padding(vertical = 24.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(16.dp),
-            ) {
-                CircularProgressIndicator(Modifier.size(32.dp))
-                Column {
-                    Text(stringResource(R.string.order_reading), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
-                    Text(stringResource(R.string.order_reading_note), style = MaterialTheme.typography.bodyMedium)
+            ScanState.Reading -> PillionCard {
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(Space.m)) {
+                    CircularProgressIndicator(Modifier.size(28.dp), color = colors.ink, strokeWidth = 3.dp)
+                    Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                        Text(stringResource(R.string.order_reading), style = MaterialTheme.typography.titleMedium, color = colors.ink)
+                        Text(stringResource(R.string.order_reading_note), style = MaterialTheme.typography.bodyMedium, color = colors.inkSecondary)
+                    }
                 }
             }
-            is ScanState.Failed -> {
-                Text(
-                    stringResource(if (state.reason == ScanFailure.Unreadable) R.string.order_unreadable else R.string.order_nothing_found),
-                    style = MaterialTheme.typography.titleMedium,
-                )
-                Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                    OutlinedButton(onClick = onDismiss, modifier = Modifier.weight(1f).height(56.dp)) { Text(stringResource(R.string.close)) }
-                    Button(onClick = onTypeIn, modifier = Modifier.weight(1f).height(56.dp)) { Text(stringResource(R.string.order_type_in)) }
+            is ScanState.Failed -> PillionCard {
+                Row(horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+                    Icon(painterResource(R.drawable.ic_info), contentDescription = null, tint = colors.ink, modifier = Modifier.padding(top = 2.dp).size(24.dp))
+                    Text(
+                        stringResource(if (state.reason == ScanFailure.Unreadable) R.string.order_unreadable else R.string.order_nothing_found),
+                        style = MaterialTheme.typography.titleMedium,
+                        color = colors.ink,
+                    )
+                }
+                Row(horizontalArrangement = Arrangement.spacedBy(Space.m), modifier = Modifier.padding(top = Space.s)) {
+                    PillButton(stringResource(R.string.close), onDismiss, container = colors.surfaceHigh, content = colors.ink, modifier = Modifier.weight(1f))
+                    PillButton(stringResource(R.string.order_type_in), onTypeIn, modifier = Modifier.weight(1f))
                 }
             }
             is ScanState.Review -> OrderReviewForm(state, onConfirm, onDismiss)
@@ -178,33 +190,36 @@ fun OrderScanPanel(
  */
 @Composable
 private fun OrderReviewForm(review: ScanState.Review, onConfirm: (OrderDraft) -> Unit, onCancel: () -> Unit) {
+    val colors = Pillion.colors
     val parsed = review.parsed
     val initial = remember(review) { OrderDraft.from(parsed) }
     var name by rememberSaveable(review) { mutableStateOf(initial.name) }
     var phone by rememberSaveable(review) { mutableStateOf(initial.phone) }
     var address by rememberSaveable(review) { mutableStateOf(initial.address) }
     var earning by rememberSaveable(review) { mutableStateOf("") }
+    val fieldShape = MaterialTheme.shapes.medium
 
-    Text(
-        stringResource(R.string.order_review_title),
-        style = MaterialTheme.typography.titleLarge,
-        fontWeight = FontWeight.Bold,
-        modifier = Modifier.semantics { heading() },
-    )
-    Text(
-        stringResource(
-            when (review.source) {
-                ScanSource.Share -> R.string.order_review_share
-                ScanSource.Camera -> R.string.order_review_camera
-                ScanSource.Manual -> R.string.order_review_manual
-                ScanSource.Gallery, ScanSource.TestImage -> R.string.order_review_gallery
-            }
-        ),
-        style = MaterialTheme.typography.bodyMedium,
-    )
-    parsed.orderId?.takeIf { it.confidence != Confidence.Low }?.let {
-        Text(stringResource(R.string.order_id, it.value), style = MaterialTheme.typography.bodyMedium)
+    Column(verticalArrangement = Arrangement.spacedBy(Space.xs)) {
+        Text(
+            stringResource(R.string.order_review_title),
+            style = MaterialTheme.typography.headlineMedium,
+            color = colors.ink,
+            modifier = Modifier.semantics { heading() },
+        )
+        Text(
+            stringResource(
+                when (review.source) {
+                    ScanSource.Share -> R.string.order_review_share
+                    ScanSource.Camera -> R.string.order_review_camera
+                    ScanSource.Manual -> R.string.order_review_manual
+                    ScanSource.Gallery, ScanSource.TestImage -> R.string.order_review_gallery
+                }
+            ),
+            style = MaterialTheme.typography.bodyMedium,
+            color = colors.inkSecondary,
+        )
     }
+    parsed.orderId?.takeIf { it.confidence != Confidence.Low }?.let { Tag(stringResource(R.string.order_id, it.value)) }
 
     OutlinedTextField(
         value = name,
@@ -212,6 +227,7 @@ private fun OrderReviewForm(review: ScanState.Review, onConfirm: (OrderDraft) ->
         label = { Text(stringResource(R.string.order_field_name)) },
         supportingText = hint(parsed.customerName, edited = name != initial.name),
         singleLine = true,
+        shape = fieldShape,
         modifier = Modifier.fillMaxWidth(),
     )
 
@@ -225,29 +241,39 @@ private fun OrderReviewForm(review: ScanState.Review, onConfirm: (OrderDraft) ->
             else -> hint(parsed.customerPhone, edited = phone != initial.phone, quietWhenMissing = parsed.phoneNumbers.isNotEmpty())
         },
         singleLine = true,
+        shape = fieldShape,
         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone),
         modifier = Modifier.fillMaxWidth(),
     )
-    // The rider picks when the parser couldn't tell which number is the customer's.
+    // The rider picks when the parser couldn't tell which number is the customer's. The chips show
+    // numbers masked; the field above shows the picked one in full to check.
     if (parsed.customerPhone?.confidence != Confidence.High && parsed.phoneNumbers.isNotEmpty()) {
-        Text(stringResource(R.string.order_pick_number), style = MaterialTheme.typography.bodyMedium)
-        parsed.phoneNumbers.forEach { number ->
-            val role = stringResource(
-                when (number.role) {
-                    NumberRole.Customer -> R.string.order_role_customer
-                    NumberRole.Store -> R.string.order_role_store
-                    NumberRole.Support -> R.string.order_role_support
-                    NumberRole.Other -> R.string.order_role_other
-                    NumberRole.Unknown -> R.string.order_role_unknown
-                }
-            )
-            FilterChip(
-                selected = OrderDraft.dialable(phone) == number.dial,
-                onClick = { phone = number.shown },
-                label = {
-                    Text(stringResource(if (number.ocrFixed) R.string.order_number_chip_fixed else R.string.order_number_chip, number.shown, role))
-                },
-            )
+        Text(stringResource(R.string.order_pick_number), style = MaterialTheme.typography.bodyMedium, color = colors.ink)
+        FlowRow(horizontalArrangement = Arrangement.spacedBy(Space.s), verticalArrangement = Arrangement.spacedBy(Space.xs)) {
+            parsed.phoneNumbers.forEach { number ->
+                val role = stringResource(
+                    when (number.role) {
+                        NumberRole.Customer -> R.string.order_role_customer
+                        NumberRole.Store -> R.string.order_role_store
+                        NumberRole.Support -> R.string.order_role_support
+                        NumberRole.Other -> R.string.order_role_other
+                        NumberRole.Unknown -> R.string.order_role_unknown
+                    }
+                )
+                FilterChip(
+                    selected = OrderDraft.dialable(phone) == number.dial,
+                    onClick = { phone = number.shown },
+                    label = {
+                        Text(stringResource(if (number.ocrFixed) R.string.order_number_chip_fixed else R.string.order_number_chip, maskPhone(number.shown), role))
+                    },
+                    shape = CircleShape,
+                    colors = FilterChipDefaults.filterChipColors(
+                        selectedContainerColor = colors.ink,
+                        selectedLabelColor = colors.background,
+                        selectedLeadingIconColor = colors.background,
+                    ),
+                )
+            }
         }
     }
 
@@ -258,6 +284,7 @@ private fun OrderReviewForm(review: ScanState.Review, onConfirm: (OrderDraft) ->
         supportingText = hint(parsed.dropAddress, edited = address != initial.address),
         minLines = 2,
         maxLines = 4,
+        shape = fieldShape,
         modifier = Modifier.fillMaxWidth(),
     )
 
@@ -266,18 +293,32 @@ private fun OrderReviewForm(review: ScanState.Review, onConfirm: (OrderDraft) ->
         onValueChange = { value -> earning = value.filter(Char::isDigit).take(5) },
         label = { Text(stringResource(R.string.order_field_earning)) },
         singleLine = true,
+        shape = fieldShape,
         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
         modifier = Modifier.fillMaxWidth(),
     )
 
     val draft = OrderDraft(name, phone, address, earning, initial.orderId, parsed.maskedPhone)
-    Row(horizontalArrangement = Arrangement.spacedBy(12.dp), modifier = Modifier.padding(bottom = 8.dp)) {
-        OutlinedButton(onClick = onCancel, modifier = Modifier.weight(1f).height(64.dp)) {
-            Text(stringResource(R.string.cancel), style = MaterialTheme.typography.titleMedium)
-        }
-        Button(onClick = { onConfirm(draft) }, enabled = !draft.isBlank, modifier = Modifier.weight(2f).height(64.dp)) {
-            Text(stringResource(R.string.order_set), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-        }
+    Row(horizontalArrangement = Arrangement.spacedBy(Space.m), modifier = Modifier.padding(top = Space.s, bottom = Space.s)) {
+        PillButton(
+            stringResource(R.string.cancel),
+            onCancel,
+            container = colors.surfaceHigh,
+            content = colors.ink,
+            minHeight = 64.dp,
+            style = MaterialTheme.typography.titleMedium,
+            modifier = Modifier.weight(1f),
+        )
+        PillButton(
+            stringResource(R.string.order_set),
+            { onConfirm(draft) },
+            enabled = !draft.isBlank,
+            container = colors.accent,
+            content = colors.onAccent,
+            minHeight = 64.dp,
+            style = MaterialTheme.typography.titleMedium,
+            modifier = Modifier.weight(2f),
+        )
     }
 }
 
@@ -286,7 +327,7 @@ private fun OrderReviewForm(review: ScanState.Review, onConfirm: (OrderDraft) ->
 private fun hint(field: Field?, edited: Boolean, quietWhenMissing: Boolean = false): (@Composable () -> Unit)? = when {
     edited -> null
     field == null || field.confidence == Confidence.Low -> if (quietWhenMissing) null else note(stringResource(R.string.order_type_missing))
-    field.confidence == Confidence.Medium -> note(stringResource(R.string.order_check_this), MaterialTheme.colorScheme.tertiary)
+    field.confidence == Confidence.Medium -> note(stringResource(R.string.order_check_this), Pillion.colors.caution)
     else -> null
 }
 
@@ -297,21 +338,16 @@ private fun note(text: String, color: Color = Color.Unspecified): @Composable ()
 fun DebugScanCard(onScan: (ScanSource, suspend () -> LoadedImage) -> Unit) {
     val context = LocalContext.current
     val samples = remember { context.assets.list(SAMPLES).orEmpty().sorted() }
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
-    ) {
-        Column(Modifier.padding(16.dp)) {
-            Text(stringResource(R.string.debug_scan_title), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
-            if (samples.isEmpty()) Text(stringResource(R.string.debug_scan_none), style = MaterialTheme.typography.bodyMedium)
-            samples.forEach { file ->
-                TextButton(onClick = {
-                    onScan(ScanSource.TestImage) {
-                        val bitmap = context.assets.open("$SAMPLES/$file").use(BitmapFactory::decodeStream)
-                        LoadedImage(bitmap, 0)
-                    }
-                }) { Text(file) }
-            }
+    PillionCard {
+        Text(stringResource(R.string.debug_scan_title), style = MaterialTheme.typography.titleMedium)
+        if (samples.isEmpty()) Text(stringResource(R.string.debug_scan_none), style = MaterialTheme.typography.bodyMedium)
+        samples.forEach { file ->
+            TextButton(onClick = {
+                onScan(ScanSource.TestImage) {
+                    val bitmap = context.assets.open("$SAMPLES/$file").use(BitmapFactory::decodeStream)
+                    LoadedImage(bitmap, 0)
+                }
+            }) { Text(file) }
         }
     }
 }

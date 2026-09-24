@@ -186,6 +186,9 @@ class RideRepository(
         earnings.addLiveTrip(startedAt, endedAt, order.dropArea, order.payoutRupees)
     }
 
+    /** English subtitle for a Hindi line; throws if the server or Sarvam can't. */
+    suspend fun translate(ride: RideCredentials, text: String): String = api.translate(ride.rideToken, text)
+
     /** km/h from a GPS fix of the last 10 s, or null. */
     fun riderSpeedKmh(): Float? = location.recentSpeedKmh()
 

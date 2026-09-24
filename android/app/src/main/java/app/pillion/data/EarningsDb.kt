@@ -77,6 +77,44 @@ class EarningsDb(context: Context) : SQLiteOpenHelper(context.applicationContext
 
     data class DayTotal(val dayStart: Long, val trips: Int, val rupees: Int)
 
+    data class Trip(val startedAt: Long, val endedAt: Long, val area: String, val rupees: Int, val seeded: Boolean)
+
+    /** A row of the safety log; [seeded] ones are the demo history, not real events. */
+    data class SafetyEvent(val at: Long, val kind: String, val note: String, val seeded: Boolean)
+
+    /** Trips that ended in [from, to), oldest first. */
+    fun trips(from: Long, to: Long): List<Trip> =
+        readableDatabase.rawQuery(
+            "SELECT started_at, ended_at, area, earned_rupees, source FROM trips WHERE ended_at >= ? AND ended_at < ? ORDER BY ended_at",
+            arrayOf(from.toString(), to.toString()),
+        ).use { cursor ->
+            buildList {
+                while (cursor.moveToNext()) {
+                    add(Trip(cursor.getLong(0), cursor.getLong(1), cursor.getString(2), cursor.getInt(3), cursor.getString(4) == "seed"))
+                }
+            }
+        }
+
+    /** The safety log, newest first (optionally only [from, to)). */
+    fun safetyEvents(from: Long = 0, to: Long = Long.MAX_VALUE, limit: Int = 100): List<SafetyEvent> =
+        readableDatabase.rawQuery(
+            "SELECT at, kind, note, source FROM safety_alerts WHERE at >= ? AND at < ? ORDER BY at DESC LIMIT ?",
+            arrayOf(from.toString(), to.toString(), limit.toString()),
+        ).use { cursor ->
+            buildList {
+                while (cursor.moveToNext()) {
+                    add(SafetyEvent(cursor.getLong(0), cursor.getString(1), cursor.getString(2), cursor.getString(3) == "seed"))
+                }
+            }
+        }
+
+    /** Whether any seeded (demo) trips fall in [from, to): the Earnings screen says so. */
+    fun hasSeededTrips(from: Long, to: Long): Boolean =
+        readableDatabase.rawQuery(
+            "SELECT 1 FROM trips WHERE source = 'seed' AND ended_at >= ? AND ended_at < ? LIMIT 1",
+            arrayOf(from.toString(), to.toString()),
+        ).use { it.moveToFirst() }
+
     /** The last [days] days, oldest first, today last. */
     fun dailyTotals(days: Int, now: Long = System.currentTimeMillis()): List<DayTotal> =
         (days - 1 downTo 0).map { ago ->

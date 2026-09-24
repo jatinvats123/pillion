@@ -5,6 +5,7 @@ import { activeAgentCount, startRide, stopAllRides, stopRide } from './agora.js'
 import { jevEnabled } from './jev.js';
 import { answerFromPhone, rideForToken } from './rides.js';
 import { onRiderTurn, runTool } from './tools.js';
+import { toEnglish } from './translate.js';
 
 try {
   validateConfig();
@@ -111,6 +112,24 @@ app.post(
     } catch (error) {
       console.warn(`[say] failed: ${describe(error)}`);
       res.status(424).json({ error: 'say_failed' });
+    }
+  }),
+);
+
+// English subtitle for a Hindi transcript line (Sarvam). The app shows the line without one if
+// this fails; 424 keeps a failure's body JSON even through the Cloudflare tunnel.
+app.post(
+  '/ride/translate',
+  withRide(async (ride, req, res) => {
+    const text = String(req.body?.text ?? '').trim();
+    if (!text) return res.status(400).json({ error: 'text is required' });
+    try {
+      const { english, ms } = await toEnglish(text);
+      console.log(`[translate] ride=${ride.channel.slice(-6)} ${ms ? `${ms} ms` : 'cached'}: "${text.slice(0, 40)}" → "${english.slice(0, 40)}"`);
+      res.json({ english });
+    } catch (error) {
+      console.warn(`[translate] failed: ${error.message}`);
+      res.status(424).json({ error: 'translate_failed' });
     }
   }),
 );
