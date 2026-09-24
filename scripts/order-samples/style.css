@@ -1,0 +1,22 @@
+/* Mock delivery-app order screens for Pillion's order-scan tests. Invented brands, names, numbers. */
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { width: 360px; height: 780px; overflow: hidden; font-family: "Segoe UI", "Nirmala UI", Arial, sans-serif; background: #f3f4f6; color: #111827; font-size: 14px; }
+.status { height: 24px; display: flex; justify-content: space-between; align-items: center; padding: 0 14px; font-size: 12px; background: var(--brand); color: #fff; }
+.bar { background: var(--brand); color: #fff; padding: 10px 16px 14px; }
+.bar .brand { font-weight: 700; font-size: 18px; letter-spacing: .2px; }
+.bar .sub { font-size: 13px; opacity: .9; margin-top: 2px; }
+.card { background: #fff; margin: 10px 12px; border-radius: 12px; padding: 12px 14px; box-shadow: 0 1px 2px rgba(0,0,0,.08); }
+.h { font-size: 11px; font-weight: 700; letter-spacing: 1px; color: #6b7280; text-transform: uppercase; margin-bottom: 6px; }
+.row { display: flex; justify-content: space-between; gap: 12px; margin: 5px 0; }
+.label { color: #6b7280; }
+.name { font-size: 17px; font-weight: 600; }
+.addr { line-height: 1.4; }
+.btns { display: flex; gap: 8px; margin-top: 10px; }
+.btn { flex: 1; text-align: center; border: 1px solid var(--brand); color: var(--brand); border-radius: 8px; padding: 8px 0; font-weight: 600; }
+.btn.fill { background: var(--brand); color: #fff; }
+.slide { margin: 14px 12px; background: var(--brand); color: #fff; border-radius: 26px; padding: 14px; text-align: center; font-weight: 700; }
+.muted { color: #6b7280; font-size: 12px; }
+.pill { display: inline-block; background: #ecfeff; color: var(--brand); border-radius: 10px; padding: 2px 8px; font-size: 12px; font-weight: 600; }
+table { width: 100%; border-collapse: collapse; }
+td { padding: 7px 0; vertical-align: top; }
+td.k { color: #6b7280; width: 110px; }

@@ -347,7 +347,7 @@ class OrderParserTest {
             Preparing · Ready in 5 mins
             Earn ₹52 on this order
             PICKUP FROM
-            Chai Point Adda
+            Kulhad Corner
             Shop 3, Vikas Marg, Shakarpur, Delhi
             Restaurant: 011 2244 6688
             Items (3)
