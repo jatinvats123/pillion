@@ -7,6 +7,7 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import app.pillion.BuildConfig
 import app.pillion.data.BackendException
+import app.pillion.data.EarningsDb
 import app.pillion.data.Order
 import app.pillion.data.RideCredentials
 import app.pillion.device.RidePermission
@@ -41,6 +42,7 @@ import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 enum class RideStatus { Idle, Connecting, Listening, Thinking, Speaking, Reconnecting, VoiceOffline, Ending, Ended }
 
@@ -104,6 +106,17 @@ class RideViewModel(application: Application) : AndroidViewModel(application) {
     val gpsAvailable: StateFlow<Boolean> = safety.gpsAvailable
     val debug = safety.debug
 
+    /** Loudness of the rider's mic and of Pillion's voice, 0..1 (the orb follows them). */
+    val riderLevel: StateFlow<Float> = voice.riderLevel
+    val agentLevel: StateFlow<Float> = voice.agentLevel
+    val micMuted: StateFlow<Boolean> = voice.micMuted
+    val riderName: StateFlow<String> = safety.contacts.riderName
+
+    private val db = application.pillion.db
+    private val _today = MutableStateFlow<EarningsDb.DayTotal?>(null)
+    /** Today's trips and earnings, for the greeting. */
+    val today: StateFlow<EarningsDb.DayTotal?> = _today.asStateFlow()
+
     val uiState: StateFlow<RideUiState> = combine(
         phase, voice.connection, voice.agentState, voice.agentPresent, voice.transcript,
     ) { phase, connection, agentState, agentPresent, transcript ->
@@ -125,6 +138,11 @@ class RideViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch {
             repository.permissionNeeded.collect { permissionNeeded.value = it }
         }
+        // A safety check needs the rider's voice ("main theek hoon"): never leave Pillion muted then.
+        viewModelScope.launch {
+            safety.state.collect { if (it != SafetyState.Idle && voice.micMuted.value) voice.setMicMuted(false) }
+        }
+        refreshToday()
         viewModelScope.launch {
             safety.actionLines.collect { voice.showActionLine(it.text, it.failed) }
         }
@@ -242,6 +260,17 @@ class RideViewModel(application: Application) : AndroidViewModel(application) {
         finishRide()
     }
 
+    /** The rider's mute button: Pillion stops hearing them until they tap again. */
+    fun setMicMuted(muted: Boolean) {
+        viewModelScope.launch { voice.setMicMuted(muted) }
+    }
+
+    fun refreshToday() {
+        viewModelScope.launch {
+            _today.value = withContext(Dispatchers.IO) { runCatching { db.dailyTotals(1).single() }.getOrNull() }
+        }
+    }
+
     fun dismissPermission() {
         permissionNeeded.value = null
     }
@@ -331,6 +360,8 @@ class RideViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch {
             runCatching { repository.recordTrip(startedAt, System.currentTimeMillis()) }
                 .onFailure { Log.w(TAG, "Trip not recorded", it) }
+            refreshToday()
+            voice.setMicMuted(false)
             if (current != null) {
                 runCatching { repository.end(current.agentId) }
                     .onFailure { Log.w(TAG, "Agent stop failed; it will idle-stop on its own", it) }

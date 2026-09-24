@@ -15,6 +15,57 @@
     <string name="status_ended">Ended</string>
     <string name="status_voice_offline">Voice offline</string>
 
+    <string name="status_mic_off">Mic off</string>
+    <string name="status_alert">Safety alert</string>
+
+    <!-- Ride screen (Phase 5 design) -->
+    <string name="greeting">Namaste, %1$s</string>
+    <string name="greeting_no_name">Namaste</string>
+    <string name="today_word">today</string>
+    <string name="today_none">No trips yet today</string>
+    <plurals name="trips_count">
+        <item quantity="one">%1$d trip</item>
+        <item quantity="other">%1$d trips</item>
+    </plurals>
+    <string name="nav_ride">Ride</string>
+    <string name="nav_earnings">Earnings</string>
+    <string name="nav_safety">Safety</string>
+    <string name="settings">Settings</string>
+    <string name="debug_tools">Debug tools</string>
+    <string name="order_button">Current order</string>
+    <string name="safety_alert_banner">Safety alert on · Open</string>
+    <string name="transcript_title">Conversation</string>
+    <string name="transcript_expand">show the whole conversation</string>
+    <string name="transcript_listening_hint">Talk in Hindi, English or Hinglish.</string>
+    <string name="action_done">Done</string>
+    <string name="action_failed">Failed</string>
+    <string name="action_warning">Warning</string>
+    <string name="action_update">Update</string>
+    <string name="mute_description">Mute Pillion</string>
+    <string name="mute_state_on">Muted: Pillion can\'t hear you</string>
+    <string name="mute_state_off">Pillion can hear you</string>
+    <string name="orb_dormant">Pillion is resting. Start a ride to talk.</string>
+    <string name="orb_connecting">Pillion is connecting</string>
+    <string name="orb_listening">Pillion is listening; the orb follows your voice</string>
+    <string name="orb_thinking">Pillion is thinking</string>
+    <string name="orb_speaking">Pillion is speaking; the orb follows its voice</string>
+    <string name="orb_offline">Pillion\'s voice is offline</string>
+    <string name="orb_muted">Pillion is muted</string>
+    <string name="orb_alert">A safety alert is on</string>
+    <string name="setup_body">Fix these so a crash alert and SOS always go out.</string>
+    <plurals name="setup_count">
+        <item quantity="one">%1$d thing to fix</item>
+        <item quantity="other">%1$d things to fix</item>
+    </plurals>
+    <string name="expand">show</string>
+    <string name="collapse">hide</string>
+
+    <!-- Settings -->
+    <string name="settings_theme">Theme</string>
+    <string name="theme_system">System</string>
+    <string name="theme_light">Light</string>
+    <string name="theme_dark">Dark</string>
+
     <string name="speaker_rider">You</string>
     <string name="speaker_pillion">Pillion</string>
     <string name="transcript_empty">Tap Start Ride and talk in Hindi, English or Hinglish.</string>

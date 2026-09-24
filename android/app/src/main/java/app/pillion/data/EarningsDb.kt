@@ -75,6 +75,16 @@ class EarningsDb(context: Context) : SQLiteOpenHelper(context.applicationContext
             .put("last_7_days", totals(startOfDay(now, daysAgo = 6), now).toJson())
     }
 
+    data class DayTotal(val dayStart: Long, val trips: Int, val rupees: Int)
+
+    /** The last [days] days, oldest first, today last. */
+    fun dailyTotals(days: Int, now: Long = System.currentTimeMillis()): List<DayTotal> =
+        (days - 1 downTo 0).map { ago ->
+            val start = startOfDay(now, ago)
+            val totals = totals(start, startOfDay(now, ago - 1))
+            DayTotal(start, totals.trips, totals.rupees)
+        }
+
     private data class Totals(val trips: Int, val rupees: Int) {
         fun toJson(): JSONObject = JSONObject().put("trips", trips).put("earned_rupees", rupees)
     }

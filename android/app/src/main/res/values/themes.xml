@@ -1,8 +1,15 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <!-- Window theme before Compose draws; dark to match the app and avoid a white flash. -->
-    <style name="Theme.Pillion" parent="android:Theme.Material.NoActionBar">
+    <!-- Window theme before Compose draws, in the app's background colour (values-night: dark). -->
+    <style name="Theme.Pillion" parent="android:Theme.Material.Light.NoActionBar">
         <item name="android:windowBackground">@color/background</item>
+        <item name="android:statusBarColor">@android:color/transparent</item>
+        <item name="android:navigationBarColor">@android:color/transparent</item>
+    </style>
+
+    <!-- Crash / SOS alert: dark from the first frame, over the lock screen. -->
+    <style name="Theme.Pillion.Alert" parent="android:Theme.Material.NoActionBar">
+        <item name="android:windowBackground">@color/alert_window</item>
         <item name="android:statusBarColor">@android:color/transparent</item>
         <item name="android:navigationBarColor">@android:color/transparent</item>
     </style>

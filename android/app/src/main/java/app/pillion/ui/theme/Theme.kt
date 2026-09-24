@@ -1,30 +1,40 @@
 package app.pillion.ui.theme
 
+import android.provider.Settings
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.darkColorScheme
 import androidx.compose.runtime.Composable
-import androidx.compose.ui.graphics.Color
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.ReadOnlyComposable
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.staticCompositionLocalOf
+import androidx.compose.ui.platform.LocalContext
 
-// Plain dark placeholder theme; the real visual direction comes in a later phase.
-private val PillionColors = darkColorScheme(
-    primary = Color(0xFFFFC400),
-    onPrimary = Color(0xFF1A1400),
-    primaryContainer = Color(0xFF3A3000),
-    onPrimaryContainer = Color(0xFFFFE08A),
-    secondaryContainer = Color(0xFF2A2D33),
-    onSecondaryContainer = Color(0xFFE3E5EA),
-    error = Color(0xFFFF6B5E),
-    errorContainer = Color(0xFF4A1512),
-    onErrorContainer = Color(0xFFFFDAD5),
-    background = Color(0xFF101114),
-    onBackground = Color(0xFFF2F3F5),
-    surface = Color(0xFF101114),
-    onSurface = Color(0xFFF2F3F5),
-    surfaceVariant = Color(0xFF1C1E23),
-    onSurfaceVariant = Color(0xFFB9BDC6),
-)
+private val LocalPillionColors = staticCompositionLocalOf { LightColors }
+private val LocalReducedMotion = staticCompositionLocalOf { false }
 
 @Composable
-fun PillionTheme(content: @Composable () -> Unit) {
-    MaterialTheme(colorScheme = PillionColors, content = content)
+fun PillionTheme(dark: Boolean = isSystemInDarkTheme(), content: @Composable () -> Unit) {
+    val colors = if (dark) DarkColors else LightColors
+    val context = LocalContext.current
+    // "Remove animations" (Accessibility) sets the animator scale to 0.
+    val reducedMotion = remember(context) {
+        Settings.Global.getFloat(context.contentResolver, Settings.Global.ANIMATOR_DURATION_SCALE, 1f) == 0f
+    }
+    CompositionLocalProvider(LocalPillionColors provides colors, LocalReducedMotion provides reducedMotion) {
+        MaterialTheme(
+            colorScheme = remember(colors) { colors.toColorScheme() },
+            typography = PillionTypography,
+            shapes = PillionShapes,
+            content = content,
+        )
+    }
+}
+
+object Pillion {
+    val colors: PillionColors
+        @Composable @ReadOnlyComposable get() = LocalPillionColors.current
+
+    val reducedMotion: Boolean
+        @Composable @ReadOnlyComposable get() = LocalReducedMotion.current
 }

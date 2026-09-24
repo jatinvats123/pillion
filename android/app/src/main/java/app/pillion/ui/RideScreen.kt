@@ -15,30 +15,38 @@ import androidx.activity.compose.LocalActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.annotation.StringRes
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.layout.wrapContentHeight
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
-import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
@@ -46,7 +54,9 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.State
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -55,16 +65,32 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawWithCache
+import androidx.compose.ui.graphics.BlendMode
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.CompositingStrategy
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.heading
-import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.Lifecycle
@@ -73,6 +99,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import app.pillion.BuildConfig
 import app.pillion.R
+import app.pillion.data.EarningsDb
 import app.pillion.data.Order
 import app.pillion.device.RidePermission
 import app.pillion.order.ScanSource
@@ -80,8 +107,24 @@ import app.pillion.order.ScanState
 import app.pillion.order.loadOrderImage
 import app.pillion.pillion
 import app.pillion.safety.SafetyState
+import app.pillion.ui.components.NoticeCard
+import app.pillion.ui.components.Orb
+import app.pillion.ui.components.OrbMood
+import app.pillion.ui.components.PillButton
+import app.pillion.ui.components.PillionCard
+import app.pillion.ui.components.RoundIconButton
+import app.pillion.ui.components.StatusPill
+import app.pillion.ui.components.dotColor
+import app.pillion.ui.components.orbBackdrop
+import app.pillion.ui.components.rememberOrbColor
+import app.pillion.ui.theme.Pillion
+import app.pillion.ui.theme.RideType
+import app.pillion.ui.theme.Space
+import app.pillion.ui.theme.Targets
 import app.pillion.voice.Speaker
 import app.pillion.voice.TranscriptLine
+import java.text.NumberFormat
+import java.util.Locale
 
 private enum class MicPrompt { None, Rationale, Denied }
 
@@ -90,7 +133,12 @@ private enum class SetupIssue { NoContacts, Sms, Location, Notifications, FullSc
 
 /** Screen entry point: owns the permission flows and wires the ViewModel. */
 @Composable
-fun RideRoute(onOpenSafety: () -> Unit, onOpenCamera: () -> Unit, viewModel: RideViewModel = viewModel()) {
+fun RideRoute(
+    onOpenSafety: () -> Unit,
+    onOpenCamera: () -> Unit,
+    onOpenSettings: () -> Unit,
+    viewModel: RideViewModel = viewModel(),
+) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     val order by viewModel.order.collectAsStateWithLifecycle()
     val scanState by viewModel.scanState.collectAsStateWithLifecycle()
@@ -99,6 +147,12 @@ fun RideRoute(onOpenSafety: () -> Unit, onOpenCamera: () -> Unit, viewModel: Rid
     val safetyState by viewModel.safetyState.collectAsStateWithLifecycle()
     val contactCount by viewModel.emergencyContactCount.collectAsStateWithLifecycle()
     val gpsAvailable by viewModel.gpsAvailable.collectAsStateWithLifecycle()
+    val riderName by viewModel.riderName.collectAsStateWithLifecycle()
+    val today by viewModel.today.collectAsStateWithLifecycle()
+    val muted by viewModel.micMuted.collectAsStateWithLifecycle()
+    // Read by the orb at draw time only: ten level updates a second don't recompose the screen.
+    val riderLevel = viewModel.riderLevel.collectAsStateWithLifecycle()
+    val agentLevel = viewModel.agentLevel.collectAsStateWithLifecycle()
     val context = LocalContext.current
     val activity = LocalActivity.current
     var micPrompt by rememberSaveable { mutableStateOf(MicPrompt.None) }
@@ -147,94 +201,131 @@ fun RideRoute(onOpenSafety: () -> Unit, onOpenCamera: () -> Unit, viewModel: Rid
     var resumes by remember { mutableIntStateOf(0) }
     LifecycleEventEffect(Lifecycle.Event.ON_RESUME) {
         if (context.hasMicPermission()) micPrompt = MicPrompt.None
+        viewModel.refreshToday()
         resumes++
     }
     val setupIssues = remember(contactCount, resumes) { context.safetySetupIssues(contactCount) }
 
-    RideScreen(
-        state = state,
-        micPrompt = micPrompt,
-        safetyState = safetyState,
-        gpsAvailable = gpsAvailable,
-        setupIssues = if (setupDismissed) emptyList() else setupIssues,
-        onStartRide = {
-            viewModel.requestStart(caller = "Start Ride button")
-            when {
-                context.hasMicPermission() -> optionalPermissionsLauncher.launch(optionalRidePermissions())
-                activity?.shouldShowRequestPermissionRationale(Manifest.permission.RECORD_AUDIO) == true ->
-                    micPrompt = MicPrompt.Rationale
-                else -> micPermissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
-            }
-        },
-        onEndRide = viewModel::endRide,
-        onSos = viewModel::sos,
-        onOpenAlert = { SafetyAlertActivity.launch(context) },
-        onRetryVoice = viewModel::retryVoice,
-        onOpenSafety = onOpenSafety,
-        onAllowMic = {
-            viewModel.requestStart(caller = "Allow microphone card")
-            micPermissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
-        },
-        onOpenSettings = { context.openAppSettings() },
-        onDismissMicPrompt = { micPrompt = MicPrompt.None },
-        onGrantPermission = { actionPermissionLauncher.launch(it.manifestNames) },
-        onDismissPermission = viewModel::dismissPermission,
-        onFixSetup = { issue ->
-            when (issue) {
-                SetupIssue.NoContacts -> onOpenSafety()
-                SetupIssue.Sms -> actionPermissionLauncher.launch(RidePermission.Sms.manifestNames)
-                SetupIssue.Location -> actionPermissionLauncher.launch(RidePermission.Location.manifestNames)
-                SetupIssue.Notifications ->
-                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                        actionPermissionLauncher.launch(arrayOf(Manifest.permission.POST_NOTIFICATIONS))
-                    }
-                SetupIssue.FullScreenAlerts -> context.openFullScreenAlertSettings()
-                SetupIssue.BatteryOptimization -> context.askToIgnoreBatteryOptimization()
-                SetupIssue.HindiVoice -> context.startSafely(Intent(TextToSpeech.Engine.ACTION_INSTALL_TTS_DATA))
-            }
-        },
-        onDismissSetup = { setupDismissed = true },
-        orderCard = {
-            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                if (stopToScan) {
-                    MessageCard(
-                        title = stringResource(R.string.order_stop_to_scan_title),
-                        body = stringResource(R.string.order_stop_to_scan_body),
-                        onDismiss = viewModel::dismissStopToScan,
-                        isError = true,
-                    )
+    val onFixSetup: (SetupIssue) -> Unit = { issue ->
+        when (issue) {
+            SetupIssue.NoContacts -> onOpenSafety()
+            SetupIssue.Sms -> actionPermissionLauncher.launch(RidePermission.Sms.manifestNames)
+            SetupIssue.Location -> actionPermissionLauncher.launch(RidePermission.Location.manifestNames)
+            SetupIssue.Notifications ->
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                    actionPermissionLauncher.launch(arrayOf(Manifest.permission.POST_NOTIFICATIONS))
                 }
-                if (cameraRefused) {
-                    MessageCard(
-                        title = stringResource(R.string.camera_denied_title),
-                        body = stringResource(R.string.camera_denied_body),
-                        actionLabel = stringResource(R.string.allow),
-                        onAction = {
-                            // No rationale after a refusal means "Don't ask again": only Settings can fix it.
-                            if (activity?.shouldShowRequestPermissionRationale(Manifest.permission.CAMERA) == true) {
-                                cameraPermissionLauncher.launch(Manifest.permission.CAMERA)
-                            } else {
-                                context.openAppSettings()
-                            }
-                        },
-                        onDismiss = { cameraRefused = false },
-                        isError = true,
-                    )
-                }
-                ActiveOrderCard(
-                    order = order,
-                    locatingDrop = locatingDrop,
-                    onScanScreenshot = {
-                        if (viewModel.scanAllowed()) pickScreenshot.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
+            SetupIssue.FullScreenAlerts -> context.openFullScreenAlertSettings()
+            SetupIssue.BatteryOptimization -> context.askToIgnoreBatteryOptimization()
+            SetupIssue.HindiVoice -> context.startSafely(Intent(TextToSpeech.Engine.ACTION_INSTALL_TTS_DATA))
+        }
+    }
+
+    // What the rider should know or fix, most urgent first. They sit above the order card, or
+    // above the conversation during a ride.
+    val notices = buildList<@Composable () -> Unit> {
+        when (micPrompt) {
+            MicPrompt.Rationale -> add {
+                NoticeCard(
+                    title = stringResource(R.string.mic_rationale_title),
+                    body = stringResource(R.string.mic_rationale_body),
+                    icon = R.drawable.ic_mic,
+                    actionLabel = stringResource(R.string.mic_allow),
+                    onAction = {
+                        viewModel.requestStart(caller = "Allow microphone card")
+                        micPermissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
                     },
-                    onScanCamera = {
-                        if (viewModel.scanAllowed()) {
-                            if (context.granted(Manifest.permission.CAMERA)) onOpenCamera() else cameraPermissionLauncher.launch(Manifest.permission.CAMERA)
-                        }
-                    },
-                    onUseDemo = viewModel::useDemoOrder,
+                    onDismiss = { micPrompt = MicPrompt.None },
                 )
             }
+            MicPrompt.Denied -> add {
+                NoticeCard(
+                    title = stringResource(R.string.mic_denied_title),
+                    body = stringResource(R.string.mic_denied_body),
+                    icon = R.drawable.ic_mic_off,
+                    actionLabel = stringResource(R.string.open_settings),
+                    onAction = { context.openAppSettings() },
+                    onDismiss = { micPrompt = MicPrompt.None },
+                )
+            }
+            MicPrompt.None -> Unit
+        }
+        if (state.rideActive && !gpsAvailable) add {
+            NoticeCard(
+                title = stringResource(R.string.gps_unavailable_title),
+                body = stringResource(R.string.gps_unavailable_body),
+                icon = R.drawable.ic_location_on,
+                safety = true,
+            )
+        }
+        state.permissionNeeded?.let { permission ->
+            add {
+                val (title, body, icon) = when (permission) {
+                    RidePermission.Location -> Triple(R.string.permission_location_title, R.string.permission_location_body, R.drawable.ic_location_on)
+                    RidePermission.Sms -> Triple(R.string.permission_sms_title, R.string.permission_sms_body, R.drawable.ic_sms)
+                    RidePermission.Call -> Triple(R.string.permission_call_title, R.string.permission_call_body, R.drawable.ic_call)
+                }
+                NoticeCard(
+                    title = stringResource(title),
+                    body = stringResource(body),
+                    icon = icon,
+                    actionLabel = stringResource(R.string.permission_allow),
+                    onAction = { actionPermissionLauncher.launch(permission.manifestNames) },
+                    onDismiss = viewModel::dismissPermission,
+                )
+            }
+        }
+        if (stopToScan) add {
+            NoticeCard(
+                title = stringResource(R.string.order_stop_to_scan_title),
+                body = stringResource(R.string.order_stop_to_scan_body),
+                icon = R.drawable.ic_two_wheeler,
+                onDismiss = viewModel::dismissStopToScan,
+            )
+        }
+        if (cameraRefused) add {
+            NoticeCard(
+                title = stringResource(R.string.camera_denied_title),
+                body = stringResource(R.string.camera_denied_body),
+                icon = R.drawable.ic_photo_camera,
+                actionLabel = stringResource(R.string.allow),
+                onAction = {
+                    // No rationale after a refusal means "Don't ask again": only Settings can fix it.
+                    if (activity?.shouldShowRequestPermissionRationale(Manifest.permission.CAMERA) == true) {
+                        cameraPermissionLauncher.launch(Manifest.permission.CAMERA)
+                    } else {
+                        context.openAppSettings()
+                    }
+                },
+                onDismiss = { cameraRefused = false },
+            )
+        }
+        if (!setupDismissed && setupIssues.isNotEmpty()) add { SetupCard(setupIssues, onFixSetup) { setupDismissed = true } }
+    }
+
+    RideScreen(
+        state = state,
+        safetyState = safetyState,
+        riderName = riderName,
+        today = today,
+        muted = muted,
+        riderLevel = riderLevel,
+        agentLevel = agentLevel,
+        notices = notices,
+        orderCard = {
+            ActiveOrderCard(
+                order = order,
+                locatingDrop = locatingDrop,
+                onScanScreenshot = {
+                    if (viewModel.scanAllowed()) pickScreenshot.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
+                },
+                onScanCamera = {
+                    if (viewModel.scanAllowed()) {
+                        if (context.granted(Manifest.permission.CAMERA)) onOpenCamera() else cameraPermissionLauncher.launch(Manifest.permission.CAMERA)
+                    }
+                },
+                onUseDemo = viewModel::useDemoOrder,
+            )
         },
         scanPanel = if (scanState == ScanState.Idle) {
             null
@@ -249,314 +340,639 @@ fun RideRoute(onOpenSafety: () -> Unit, onOpenCamera: () -> Unit, viewModel: Rid
                 )
             }
         },
-        testOrder = order.takeIf { BuildConfig.DEBUG && it.isDemo },
-        onSaveTestPhone = viewModel::setTestCustomerPhone,
-        debug = if (BuildConfig.DEBUG) {
+        debugTools = if (BuildConfig.DEBUG) {
             {
-                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    DebugSafetyCard(
-                        viewModel = viewModel,
-                        rideActive = state.rideActive,
-                    )
-                    DebugScanCard(onScan = viewModel::scanImage)
-                }
+                DebugSafetyCard(viewModel = viewModel, rideActive = state.rideActive)
+                DebugScanCard(onScan = viewModel::scanImage)
+                if (order.isDemo && !state.rideActive) TestOrderCard(order, viewModel::setTestCustomerPhone)
             }
         } else {
             null
         },
+        onStartRide = {
+            viewModel.requestStart(caller = "Start Ride button")
+            when {
+                context.hasMicPermission() -> optionalPermissionsLauncher.launch(optionalRidePermissions())
+                activity?.shouldShowRequestPermissionRationale(Manifest.permission.RECORD_AUDIO) == true ->
+                    micPrompt = MicPrompt.Rationale
+                else -> micPermissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
+            }
+        },
+        onEndRide = viewModel::endRide,
+        onSos = viewModel::sos,
+        onOpenAlert = { SafetyAlertActivity.launch(context) },
+        onRetryVoice = viewModel::retryVoice,
+        onToggleMute = { viewModel.setMicMuted(!muted) },
+        onOpenSettings = onOpenSettings,
     )
 }
+
+private enum class Sheet { None, Transcript, Order, Debug }
 
 @Composable
 private fun RideScreen(
     state: RideUiState,
-    micPrompt: MicPrompt,
     safetyState: SafetyState,
-    gpsAvailable: Boolean,
-    setupIssues: List<SetupIssue>,
+    riderName: String,
+    today: EarningsDb.DayTotal?,
+    muted: Boolean,
+    riderLevel: State<Float>,
+    agentLevel: State<Float>,
+    notices: List<@Composable () -> Unit>,
+    orderCard: @Composable () -> Unit,
+    /** Set while an order is read or checked: it takes the main area's place. */
+    scanPanel: (@Composable (Modifier) -> Unit)?,
+    debugTools: (@Composable () -> Unit)?,
     onStartRide: () -> Unit,
     onEndRide: () -> Unit,
     onSos: () -> Unit,
     onOpenAlert: () -> Unit,
     onRetryVoice: () -> Unit,
-    onOpenSafety: () -> Unit,
-    onAllowMic: () -> Unit,
+    onToggleMute: () -> Unit,
     onOpenSettings: () -> Unit,
-    onDismissMicPrompt: () -> Unit,
-    onGrantPermission: (RidePermission) -> Unit,
-    onDismissPermission: () -> Unit,
-    onFixSetup: (SetupIssue) -> Unit,
-    onDismissSetup: () -> Unit,
-    orderCard: @Composable () -> Unit,
-    /** Set while an order is read or checked: it takes the transcript's place. */
-    scanPanel: (@Composable (Modifier) -> Unit)?,
-    testOrder: Order?,
-    onSaveTestPhone: (String) -> Unit,
-    debug: (@Composable () -> Unit)?,
 ) {
-    // Surface supplies the theme's content colour; bare Text would otherwise default to black.
-    Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .safeDrawingPadding()
-                .padding(horizontal = 20.dp, vertical = 16.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp),
-        ) {
-            Header(state.status, onOpenSafety)
+    val colors = Pillion.colors
+    val alertOn = safetyState != SafetyState.Idle
+    // Ending keeps the ride layout ("Ending…") until the ride is really over.
+    val inRide = state.rideActive || state.status == RideStatus.Ending
+    val status = rideStatusOf(state.status, alertOn, muted, inRide)
+    val orbColor = rememberOrbColor(status.mood)
+    var sheet by remember { mutableStateOf(Sheet.None) }
+    LaunchedEffect(scanPanel != null) { if (scanPanel != null) sheet = Sheet.None }
 
-            // Always in view: what the rider must know right now.
-            if (safetyState != SafetyState.Idle) {
-                MessageCard(
-                    title = stringResource(R.string.safety_alert_active),
-                    actionLabel = stringResource(R.string.open),
-                    onAction = onOpenAlert,
-                    isError = true,
-                )
-            }
-            state.voiceProblem?.let { problem ->
-                MessageCard(
-                    title = stringResource(R.string.voice_offline_title),
-                    body = stringResource(R.string.voice_offline_body, problem),
-                    actionLabel = stringResource(R.string.retry_voice),
-                    onAction = onRetryVoice,
-                )
-            }
-
-            // Cards that scroll away with the transcript.
-            val cards = buildList<@Composable () -> Unit> {
-                when (micPrompt) {
-                    MicPrompt.Rationale -> add {
-                        MessageCard(
-                            title = stringResource(R.string.mic_rationale_title),
-                            body = stringResource(R.string.mic_rationale_body),
-                            actionLabel = stringResource(R.string.mic_allow),
-                            onAction = onAllowMic,
-                            onDismiss = onDismissMicPrompt,
-                        )
-                    }
-                    MicPrompt.Denied -> add {
-                        MessageCard(
-                            title = stringResource(R.string.mic_denied_title),
-                            body = stringResource(R.string.mic_denied_body),
-                            actionLabel = stringResource(R.string.open_settings),
-                            onAction = onOpenSettings,
-                            onDismiss = onDismissMicPrompt,
-                            isError = true,
-                        )
-                    }
-                    MicPrompt.None -> Unit
+    Box(
+        Modifier
+            .fillMaxSize()
+            .background(colors.background)
+            .orbBackdrop({ orbColor.value }, colors.isDark, centerY = if (inRide) 0.32f else 0.3f)
+            .safeDrawingPadding(),
+    ) {
+        Column(Modifier.fillMaxSize()) {
+            TopBar {
+                if (inRide) {
+                    StatusPill(stringResource(status.label), status.mood.dotColor())
+                } else {
+                    Wordmark()
                 }
-                if (state.rideActive && !gpsAvailable) add {
-                    MessageCard(
-                        title = stringResource(R.string.gps_unavailable_title),
-                        body = stringResource(R.string.gps_unavailable_body),
-                        isError = true,
+                Box(Modifier.weight(1f))
+                if (inRide) RoundIconButton(R.drawable.ic_package_2, stringResource(R.string.order_button), onClick = { sheet = Sheet.Order })
+                if (debugTools != null) RoundIconButton(R.drawable.ic_bug_report, stringResource(R.string.debug_tools), onClick = { sheet = Sheet.Debug })
+                RoundIconButton(R.drawable.ic_settings, stringResource(R.string.settings), onClick = onOpenSettings)
+            }
+
+            val gutter = Modifier.padding(horizontal = Space.gutter)
+            when {
+                scanPanel != null -> scanPanel(Modifier.weight(1f).then(gutter))
+                inRide -> {
+                    Orb(
+                        mood = status.mood,
+                        level = {
+                            when (status.mood) {
+                                OrbMood.Listening -> riderLevel.value
+                                OrbMood.Speaking -> agentLevel.value
+                                else -> 0f
+                            }
+                        },
+                        description = stringResource(status.orbDescription),
+                        modifier = Modifier.fillMaxWidth().weight(0.9f),
+                    )
+                    Column(gutter, verticalArrangement = Arrangement.spacedBy(Space.m)) {
+                        if (alertOn) AlertBanner(onOpenAlert)
+                        if (notices.isNotEmpty()) {
+                            Column(
+                                Modifier.heightIn(max = 220.dp).verticalScroll(rememberScrollState()),
+                                verticalArrangement = Arrangement.spacedBy(Space.m),
+                            ) { notices.forEach { it() } }
+                        }
+                    }
+                    val problem = state.voiceProblem
+                    if (problem != null) {
+                        VoiceOfflinePanel(problem, onRetryVoice, Modifier.weight(1f).then(gutter))
+                    } else {
+                        LiveTranscript(state.transcript, onExpand = { sheet = Sheet.Transcript }, modifier = Modifier.weight(1f).then(gutter))
+                    }
+                }
+                else -> Box(Modifier.weight(1f)) {
+                    Column(
+                        Modifier
+                            .verticalScroll(rememberScrollState())
+                            .then(gutter)
+                            .padding(bottom = Space.xl),
+                        verticalArrangement = Arrangement.spacedBy(Space.l),
+                    ) {
+                        Greeting(riderName, today)
+                        if (alertOn) AlertBanner(onOpenAlert)
+                        Orb(
+                            mood = OrbMood.Dormant,
+                            level = { 0f },
+                            description = stringResource(R.string.orb_dormant),
+                            modifier = Modifier.fillMaxWidth().height(160.dp),
+                        )
+                        notices.forEach { it() }
+                        orderCard()
+                    }
+                    // Cards slide softly under the ride buttons instead of being cut off.
+                    Box(
+                        Modifier
+                            .align(Alignment.BottomCenter)
+                            .fillMaxWidth()
+                            .height(Space.xl)
+                            .background(Brush.verticalGradient(listOf(Color.Transparent, colors.background))),
                     )
                 }
-                state.permissionNeeded?.let { permission ->
-                    add {
-                        val (title, body) = when (permission) {
-                            RidePermission.Location -> R.string.permission_location_title to R.string.permission_location_body
-                            RidePermission.Sms -> R.string.permission_sms_title to R.string.permission_sms_body
-                            RidePermission.Call -> R.string.permission_call_title to R.string.permission_call_body
-                        }
-                        MessageCard(
-                            title = stringResource(title),
-                            body = stringResource(body),
-                            actionLabel = stringResource(R.string.permission_allow),
-                            onAction = { onGrantPermission(permission) },
-                            onDismiss = onDismissPermission,
-                            isError = true,
-                        )
-                    }
-                }
-                if (setupIssues.isNotEmpty()) add { SetupCard(setupIssues, onFixSetup, onDismissSetup) }
-                add(orderCard)
-                if (testOrder != null && !state.rideActive) add { TestOrderCard(testOrder, onSaveTestPhone) }
-                debug?.let { add(it) }
-            }
-            if (scanPanel != null) {
-                scanPanel(Modifier.weight(1f))
-            } else {
-                Transcript(cards = cards, lines = state.transcript, modifier = Modifier.weight(1f))
             }
 
-            Row(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
-                SosButton(enabled = safetyState == SafetyState.Idle, onClick = onSos)
-                RideButton(
-                    active = state.rideActive,
-                    ending = state.status == RideStatus.Ending,
-                    alertOn = safetyState != SafetyState.Idle,
-                    onStartRide = onStartRide,
-                    onEndRide = onEndRide,
-                    modifier = Modifier.weight(1f),
-                )
-            }
+            RideControls(
+                inRide = inRide,
+                ending = state.status == RideStatus.Ending,
+                alertOn = alertOn,
+                muted = muted,
+                onStartRide = onStartRide,
+                onEndRide = onEndRide,
+                onSos = onSos,
+                onToggleMute = onToggleMute,
+                modifier = Modifier.padding(start = Space.gutter, end = Space.gutter, top = Space.m, bottom = Space.l),
+            )
         }
+    }
+
+    when (sheet) {
+        Sheet.None -> Unit
+        Sheet.Transcript -> TranscriptSheet(state.transcript, onDismiss = { sheet = Sheet.None })
+        Sheet.Order -> PillionSheet(onDismiss = { sheet = Sheet.None }) { orderCard() }
+        Sheet.Debug -> PillionSheet(onDismiss = { sheet = Sheet.None }) { debugTools?.invoke() }
     }
 }
 
-@Composable
-private fun Header(status: RideStatus, onOpenSafety: () -> Unit) {
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
-    ) {
-        Column(Modifier.weight(1f)) {
-            Text(
-                text = stringResource(R.string.app_name),
-                style = MaterialTheme.typography.headlineMedium,
-                fontWeight = FontWeight.Bold,
-                modifier = Modifier.semantics { heading() },
-            )
-            Text(
-                text = stringResource(R.string.tagline),
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-        }
-        TextButton(onClick = onOpenSafety) { Text(stringResource(R.string.safety_button)) }
-        StatusLabel(status)
-    }
+/** The status pill's word, the orb's mood and the orb's spoken description, from the ride state. */
+private data class ShownStatus(@StringRes val label: Int, val mood: OrbMood, @StringRes val orbDescription: Int)
+
+private fun rideStatusOf(status: RideStatus, alertOn: Boolean, muted: Boolean, inRide: Boolean): ShownStatus = when {
+    !inRide -> ShownStatus(R.string.status_idle, OrbMood.Dormant, R.string.orb_dormant)
+    alertOn -> ShownStatus(R.string.status_alert, OrbMood.Alert, R.string.orb_alert)
+    status == RideStatus.VoiceOffline -> ShownStatus(R.string.status_voice_offline, OrbMood.Offline, R.string.orb_offline)
+    status == RideStatus.Reconnecting -> ShownStatus(R.string.status_reconnecting, OrbMood.Offline, R.string.orb_offline)
+    status == RideStatus.Connecting -> ShownStatus(R.string.status_connecting, OrbMood.Connecting, R.string.orb_connecting)
+    status == RideStatus.Ending -> ShownStatus(R.string.ending_ride, OrbMood.Offline, R.string.orb_offline)
+    status == RideStatus.Thinking -> ShownStatus(R.string.status_thinking, OrbMood.Thinking, R.string.orb_thinking)
+    status == RideStatus.Speaking -> ShownStatus(R.string.status_speaking, OrbMood.Speaking, R.string.orb_speaking)
+    muted -> ShownStatus(R.string.status_mic_off, OrbMood.Offline, R.string.orb_muted)
+    else -> ShownStatus(R.string.status_listening, OrbMood.Listening, R.string.orb_listening)
 }
 
 @Composable
-private fun StatusLabel(status: RideStatus) {
-    val (label, color) = when (status) {
-        RideStatus.Idle -> R.string.status_idle to MaterialTheme.colorScheme.onSurfaceVariant
-        RideStatus.Connecting -> R.string.status_connecting to MaterialTheme.colorScheme.onSurfaceVariant
-        RideStatus.Listening -> R.string.status_listening to Color(0xFF4ADE80)
-        RideStatus.Thinking -> R.string.status_thinking to Color(0xFF60A5FA)
-        RideStatus.Speaking -> R.string.status_speaking to MaterialTheme.colorScheme.primary
-        RideStatus.Reconnecting -> R.string.status_reconnecting to Color(0xFFFB923C)
-        RideStatus.VoiceOffline -> R.string.status_voice_offline to Color(0xFFFB923C)
-        RideStatus.Ending -> R.string.ending_ride to MaterialTheme.colorScheme.onSurfaceVariant
-        RideStatus.Ended -> R.string.status_ended to MaterialTheme.colorScheme.onSurfaceVariant
-    }
+private fun TopBar(content: @Composable RowScope.() -> Unit) {
     Row(
         modifier = Modifier
-            .background(MaterialTheme.colorScheme.surfaceVariant, RoundedCornerShape(50))
-            .padding(horizontal = 14.dp, vertical = 8.dp)
-            // TalkBack announces status changes without the rider having to find the label.
-            .semantics { liveRegion = LiveRegionMode.Polite },
+            .fillMaxWidth()
+            .padding(start = Space.gutter, end = Space.m, top = Space.s, bottom = Space.s),
         verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
-    ) {
-        Box(Modifier.size(10.dp).background(color, CircleShape))
+        horizontalArrangement = Arrangement.spacedBy(Space.s),
+        content = content,
+    )
+}
+
+@Composable
+private fun Wordmark() {
+    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+        Box(Modifier.size(14.dp).background(Pillion.colors.accent, CircleShape))
+        Text(stringResource(R.string.app_name), style = MaterialTheme.typography.titleLarge, color = Pillion.colors.ink)
+    }
+}
+
+@Composable
+private fun Greeting(name: String, today: EarningsDb.DayTotal?) {
+    val colors = Pillion.colors
+    Column(Modifier.padding(top = Space.m), verticalArrangement = Arrangement.spacedBy(Space.xs)) {
         Text(
-            text = stringResource(label),
-            style = MaterialTheme.typography.titleMedium,
-            fontWeight = FontWeight.SemiBold,
+            text = if (name.isBlank()) stringResource(R.string.greeting_no_name) else stringResource(R.string.greeting, name.trim().substringBefore(' ')),
+            style = MaterialTheme.typography.headlineLarge,
+            color = colors.ink,
+            modifier = Modifier.semantics { heading() },
+        )
+        if (today != null) {
+            val trips = pluralStringResource(R.plurals.trips_count, today.trips, today.trips)
+            val amount = rupees(today.rupees)
+            val todayWord = stringResource(R.string.today_word)
+            Text(
+                text = if (today.trips == 0) {
+                    buildAnnotatedString { append(stringResource(R.string.today_none)) }
+                } else {
+                    buildAnnotatedString {
+                        withStyle(SpanStyle(color = colors.ink, fontWeight = FontWeight.SemiBold)) { append(amount) }
+                        append(" $todayWord · $trips")
+                    }
+                },
+                style = MaterialTheme.typography.titleMedium.merge(RideType.tabular).copy(fontWeight = FontWeight.Normal),
+                color = colors.inkSecondary,
+            )
+        }
+    }
+}
+
+/** ₹ with Indian digit grouping (₹1,23,456). */
+fun rupees(amount: Int): String = "₹" + NumberFormat.getIntegerInstance(Locale("en", "IN")).format(amount)
+
+/** Loud on purpose: a safety alert is running and the rider should answer it. */
+@Composable
+private fun AlertBanner(onOpen: () -> Unit) {
+    PillButton(
+        text = stringResource(R.string.safety_alert_banner),
+        onClick = onOpen,
+        icon = R.drawable.ic_warning,
+        container = Pillion.colors.alertScreen,
+        content = Color.White,
+        minHeight = Targets.rideSmall,
+        style = MaterialTheme.typography.titleMedium,
+        modifier = Modifier.fillMaxWidth(),
+    )
+}
+
+/**
+ * The last few lines, newest at the bottom and largest; older ones fade out at the top. Tap for
+ * the whole conversation.
+ */
+@Composable
+private fun LiveTranscript(lines: List<TranscriptLine>, onExpand: () -> Unit, modifier: Modifier = Modifier) {
+    val colors = Pillion.colors
+    val recent = lines.takeLast(4)
+    val newest = recent.indexOfLast { it.speaker != Speaker.Action }
+    Box(
+        modifier
+            .fillMaxWidth()
+            .clickable(onClickLabel = stringResource(R.string.transcript_expand), onClick = onExpand)
+            .fadeTopEdge(),
+    ) {
+        if (recent.isEmpty()) {
+            Text(
+                stringResource(R.string.transcript_listening_hint),
+                style = RideType.secondary,
+                color = colors.inkSecondary,
+                textAlign = TextAlign.Center,
+                modifier = Modifier.align(Alignment.Center),
+            )
+        } else {
+            Column(
+                Modifier
+                    .align(Alignment.BottomCenter)
+                    .fillMaxWidth()
+                    .wrapContentHeight(Alignment.Bottom, unbounded = true)
+                    .padding(bottom = Space.s),
+                verticalArrangement = Arrangement.spacedBy(Space.m),
+                horizontalAlignment = Alignment.CenterHorizontally,
+            ) {
+                recent.forEachIndexed { index, line ->
+                    key(line.key) {
+                        if (line.speaker == Speaker.Action) ActionChip(line) else SpokenLine(line, latest = index == newest)
+                    }
+                }
+            }
+        }
+    }
+}
+
+/** Clips to the box and fades the top 56 dp, so long lines slide out softly. */
+private fun Modifier.fadeTopEdge(): Modifier = this
+    .graphicsLayer {
+        compositingStrategy = CompositingStrategy.Offscreen
+        clip = true
+    }
+    .drawWithCache {
+        val fade = Brush.verticalGradient(0f to Color.Transparent, 1f to Color.Black, startY = 0f, endY = 56.dp.toPx())
+        onDrawWithContent {
+            drawContent()
+            drawRect(fade, blendMode = BlendMode.DstIn)
+        }
+    }
+
+@Composable
+private fun SpokenLine(line: TranscriptLine, latest: Boolean) {
+    val colors = Pillion.colors
+    val rider = line.speaker == Speaker.Rider
+    Column(
+        Modifier
+            .fillMaxWidth()
+            .alpha(if (line.isFinal) 1f else 0.72f),
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
+        Text(
+            stringResource(if (rider) R.string.speaker_rider else R.string.speaker_pillion),
+            style = MaterialTheme.typography.labelMedium,
+            color = colors.inkSecondary,
+        )
+        val interrupted = if (line.interrupted) " — ${stringResource(R.string.interrupted)}" else ""
+        Text(
+            text = line.text + interrupted,
+            style = if (latest) RideType.latest else RideType.secondary,
+            color = if (latest) colors.ink else colors.inkSecondary,
+            textAlign = TextAlign.Center,
         )
     }
 }
 
-/** Cards first, then the conversation; follows the newest line. */
+/** Something Pillion did ("✓ SMS sent to Rahul", "⚠ Crash detected"): a chip with a real icon, not a speech line. */
 @Composable
-private fun Transcript(cards: List<@Composable () -> Unit>, lines: List<TranscriptLine>, modifier: Modifier = Modifier) {
-    val listState = rememberLazyListState()
-    LaunchedEffect(lines.size, lines.lastOrNull()?.text) {
-        if (lines.isNotEmpty()) listState.animateScrollToItem(cards.size + lines.lastIndex)
+private fun ActionChip(line: TranscriptLine) {
+    val colors = Pillion.colors
+    val (icon, tint, meaning) = when {
+        line.text.startsWith("↻") -> Triple(R.drawable.ic_sync, colors.inkSecondary, R.string.action_update)
+        line.text.startsWith("⚠") -> Triple(R.drawable.ic_warning, colors.danger, R.string.action_warning)
+        line.failed || line.text.startsWith("✗") -> Triple(R.drawable.ic_error, colors.danger, R.string.action_failed)
+        else -> Triple(R.drawable.ic_check_circle, colors.success, R.string.action_done)
     }
-    LazyColumn(
-        state = listState,
-        modifier = modifier.fillMaxWidth(),
-        verticalArrangement = Arrangement.spacedBy(10.dp),
+    Row(
+        modifier = Modifier
+            .background(colors.surfaceHigh, CircleShape)
+            .padding(horizontal = 14.dp, vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(Space.s),
     ) {
-        items(cards.size) { cards[it]() }
-        if (lines.isEmpty()) {
-            item {
-                Text(
-                    text = stringResource(R.string.transcript_empty),
-                    style = MaterialTheme.typography.bodyLarge,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(vertical = 24.dp),
-                )
+        Icon(painterResource(icon), contentDescription = stringResource(meaning), tint = tint, modifier = Modifier.size(20.dp))
+        Text(line.text.trimStart { !it.isLetterOrDigit() }, style = MaterialTheme.typography.labelLarge, color = colors.ink)
+    }
+}
+
+@Composable
+private fun VoiceOfflinePanel(problem: String, onRetry: () -> Unit, modifier: Modifier = Modifier) {
+    val colors = Pillion.colors
+    Column(
+        modifier
+            .fillMaxWidth()
+            .verticalScroll(rememberScrollState()),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(Space.m, Alignment.CenterVertically),
+    ) {
+        Icon(painterResource(R.drawable.ic_cloud_off), contentDescription = null, tint = colors.inkSecondary, modifier = Modifier.size(32.dp))
+        Text(stringResource(R.string.voice_offline_title), style = MaterialTheme.typography.headlineSmall, color = colors.ink, textAlign = TextAlign.Center)
+        Text(stringResource(R.string.voice_offline_body, problem), style = MaterialTheme.typography.bodyLarge, color = colors.inkSecondary, textAlign = TextAlign.Center)
+        PillButton(
+            text = stringResource(R.string.retry_voice),
+            onClick = onRetry,
+            icon = R.drawable.ic_refresh,
+            container = colors.surfaceHigh,
+            content = colors.ink,
+            minHeight = Targets.rideSmall,
+            style = RideType.control,
+        )
+    }
+}
+
+/**
+ * Start / End Ride, SOS (always there, works offline) and, during a ride, mute. Big targets with
+ * wide gaps; at large font sizes the main button takes its own row.
+ */
+@Composable
+private fun RideControls(
+    inRide: Boolean,
+    ending: Boolean,
+    alertOn: Boolean,
+    muted: Boolean,
+    onStartRide: () -> Unit,
+    onEndRide: () -> Unit,
+    onSos: () -> Unit,
+    onToggleMute: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val colors = Pillion.colors
+    val haptics = LocalHapticFeedback.current
+    val largeText = LocalDensity.current.fontScale > 1.3f
+    val main = @Composable { buttonModifier: Modifier ->
+        if (inRide) {
+            PillButton(
+                text = stringResource(if (ending) R.string.ending_ride else R.string.end_ride),
+                onClick = {
+                    haptics.performHapticFeedback(HapticFeedbackType.Confirm)
+                    onEndRide()
+                },
+                // No icon: it shares the row with SOS and mute, and the words must fit on one line.
+                // During a safety alert the rider answers it first.
+                enabled = !ending && !alertOn,
+                container = colors.ink,
+                content = colors.background,
+                minHeight = Targets.ride,
+                style = RideType.control,
+                horizontalPadding = Space.m,
+                modifier = buttonModifier,
+            )
+        } else {
+            PillButton(
+                text = stringResource(R.string.start_ride),
+                onClick = {
+                    haptics.performHapticFeedback(HapticFeedbackType.Confirm)
+                    onStartRide()
+                },
+                icon = R.drawable.ic_two_wheeler,
+                container = colors.accent,
+                content = colors.onAccent,
+                minHeight = Targets.ride,
+                style = RideType.control,
+                modifier = buttonModifier,
+            )
+        }
+    }
+    val secondary = @Composable {
+        SosButton(enabled = !alertOn, onClick = onSos)
+        if (inRide) MuteButton(muted = muted, enabled = !ending, onToggle = onToggleMute)
+    }
+    if (largeText) {
+        Column(modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(Targets.rideGap)) {
+            main(Modifier.fillMaxWidth())
+            Row(horizontalArrangement = Arrangement.spacedBy(Targets.rideGap), verticalAlignment = Alignment.CenterVertically) { secondary() }
+        }
+    } else {
+        Row(
+            modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(Targets.rideGap),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            main(Modifier.weight(1f))
+            secondary()
+        }
+    }
+}
+
+/** Works with or without a ride, voice or internet: a 5-second cancel window, then SMS. */
+@Composable
+private fun SosButton(enabled: Boolean, onClick: () -> Unit) {
+    val colors = Pillion.colors
+    val haptics = LocalHapticFeedback.current
+    val description = stringResource(R.string.sos_button_description)
+    Surface(
+        onClick = {
+            haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+            onClick()
+        },
+        enabled = enabled,
+        shape = CircleShape,
+        color = colors.background,
+        border = BorderStroke(3.dp, colors.alert.copy(alpha = if (enabled) 1f else 0.38f)),
+        modifier = Modifier
+            .heightIn(min = Targets.ride)
+            .widthIn(min = Targets.ride)
+            .semantics { contentDescription = description },
+    ) {
+        Box(contentAlignment = Alignment.Center, modifier = Modifier.padding(Space.s)) {
+            Text(
+                stringResource(R.string.sos_button),
+                style = RideType.control.copy(fontWeight = FontWeight.Black),
+                color = colors.danger.copy(alpha = if (enabled) 1f else 0.38f),
+                modifier = Modifier.clearAndSetSemantics {},
+            )
+        }
+    }
+}
+
+/** Pillion stops hearing the rider (the mic isn't sent) until tapped again. */
+@Composable
+private fun MuteButton(muted: Boolean, enabled: Boolean, onToggle: () -> Unit) {
+    val colors = Pillion.colors
+    val description = stringResource(R.string.mute_description)
+    val stateText = stringResource(if (muted) R.string.mute_state_on else R.string.mute_state_off)
+    Box(
+        contentAlignment = Alignment.Center,
+        modifier = Modifier
+            .size(Targets.rideSmall)
+            .background(if (muted) colors.ink else colors.surfaceHigh, CircleShape)
+            .toggleable(value = muted, enabled = enabled, role = Role.Switch, onValueChange = { onToggle() })
+            .semantics {
+                contentDescription = description
+                stateDescription = stateText
+            },
+    ) {
+        Icon(
+            painterResource(if (muted) R.drawable.ic_mic_off else R.drawable.ic_mic),
+            contentDescription = null,
+            tint = if (muted) colors.background else colors.ink,
+            modifier = Modifier.size(32.dp),
+        )
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun PillionSheet(onDismiss: () -> Unit, content: @Composable () -> Unit) {
+    ModalBottomSheet(onDismissRequest = onDismiss, containerColor = Pillion.colors.background) {
+        Column(
+            Modifier
+                .verticalScroll(rememberScrollState())
+                .padding(start = Space.gutter, end = Space.gutter, bottom = Space.xl),
+            verticalArrangement = Arrangement.spacedBy(Space.m),
+        ) { content() }
+    }
+}
+
+/** The whole conversation, following the newest line. */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun TranscriptSheet(lines: List<TranscriptLine>, onDismiss: () -> Unit) {
+    val colors = Pillion.colors
+    val listState = rememberLazyListState(initialFirstVisibleItemIndex = lines.lastIndex.coerceAtLeast(0))
+    LaunchedEffect(lines.size) { if (lines.isNotEmpty()) listState.animateScrollToItem(lines.lastIndex) }
+    ModalBottomSheet(onDismissRequest = onDismiss, containerColor = colors.background) {
+        Text(
+            stringResource(R.string.transcript_title),
+            style = MaterialTheme.typography.headlineSmall,
+            color = colors.ink,
+            modifier = Modifier
+                .padding(horizontal = Space.gutter)
+                .semantics { heading() },
+        )
+        LazyColumn(
+            state = listState,
+            modifier = Modifier.fillMaxWidth(),
+            contentPadding = androidx.compose.foundation.layout.PaddingValues(start = Space.gutter, end = Space.gutter, top = Space.m, bottom = Space.xl),
+            verticalArrangement = Arrangement.spacedBy(Space.m),
+        ) {
+            if (lines.isEmpty()) {
+                item { Text(stringResource(R.string.transcript_empty), style = MaterialTheme.typography.bodyLarge, color = colors.inkSecondary) }
+            }
+            items(lines, key = { it.key }) { line ->
+                if (line.speaker == Speaker.Action) ActionChip(line) else TranscriptBubble(line)
             }
         }
-        items(lines, key = { it.key }) { line -> TranscriptBubble(line) }
     }
 }
 
 @Composable
 private fun TranscriptBubble(line: TranscriptLine) {
-    if (line.speaker == Speaker.Action) {
-        ActionLine(line)
-        return
-    }
-    val isRider = line.speaker == Speaker.Rider
-    Column(
-        modifier = Modifier.fillMaxWidth(),
-        horizontalAlignment = if (isRider) Alignment.End else Alignment.Start,
-    ) {
+    val colors = Pillion.colors
+    val rider = line.speaker == Speaker.Rider
+    Column(Modifier.fillMaxWidth(), horizontalAlignment = if (rider) Alignment.End else Alignment.Start) {
         Text(
-            text = stringResource(if (isRider) R.string.speaker_rider else R.string.speaker_pillion),
+            stringResource(if (rider) R.string.speaker_rider else R.string.speaker_pillion),
             style = MaterialTheme.typography.labelMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp),
+            color = colors.inkSecondary,
+            modifier = Modifier.padding(horizontal = Space.xs, vertical = 2.dp),
         )
         val interrupted = if (line.interrupted) " — ${stringResource(R.string.interrupted)}" else ""
         Text(
             text = line.text + interrupted,
             style = MaterialTheme.typography.bodyLarge,
-            color = if (isRider) MaterialTheme.colorScheme.onSecondaryContainer else MaterialTheme.colorScheme.onPrimaryContainer,
+            color = colors.ink,
             modifier = Modifier
                 .widthIn(max = 320.dp)
-                .background(
-                    if (isRider) MaterialTheme.colorScheme.secondaryContainer else MaterialTheme.colorScheme.primaryContainer,
-                    RoundedCornerShape(16.dp),
-                )
-                .padding(horizontal = 14.dp, vertical = 10.dp)
-                .alpha(if (line.isFinal) 1f else 0.7f),
+                .background(if (rider) colors.surfaceHigh else colors.surface, RoundedCornerShape(20.dp))
+                .padding(horizontal = Space.m, vertical = 12.dp)
+                .alpha(if (line.isFinal) 1f else 0.72f),
         )
     }
 }
 
-/** Something Pillion did ("✓ SMS sent to Rahul", "⚠ Crash detected"): a compact line, not a speech bubble. */
-@Composable
-private fun ActionLine(line: TranscriptLine) {
-    Text(
-        text = line.text,
-        style = MaterialTheme.typography.titleSmall,
-        fontWeight = FontWeight.SemiBold,
-        color = if (line.failed) MaterialTheme.colorScheme.error else Color(0xFF4ADE80),
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 4.dp, vertical = 2.dp),
-    )
-}
-
+/** One quiet line ("Safety setup · 2 to fix"); tap to see and fix each item. */
 @Composable
 private fun SetupCard(issues: List<SetupIssue>, onFix: (SetupIssue) -> Unit, onDismiss: () -> Unit) {
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer, contentColor = MaterialTheme.colorScheme.onErrorContainer),
-    ) {
-        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Text(stringResource(R.string.setup_title), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
-            issues.forEach { issue ->
-                val (text, action) = when (issue) {
-                    SetupIssue.NoContacts -> R.string.setup_no_contacts to R.string.add
-                    SetupIssue.Sms -> R.string.setup_sms to R.string.allow
-                    SetupIssue.Location -> R.string.setup_location to R.string.allow
-                    SetupIssue.Notifications -> R.string.setup_notifications to R.string.allow
-                    SetupIssue.FullScreenAlerts -> R.string.setup_full_screen to R.string.allow
-                    SetupIssue.BatteryOptimization -> R.string.setup_battery to R.string.fix
-                    SetupIssue.HindiVoice -> R.string.setup_hindi_voice to R.string.install
-                }
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Column(Modifier.weight(1f)) {
-                        Text(stringResource(text), style = MaterialTheme.typography.bodyMedium)
-                        if (issue == SetupIssue.BatteryOptimization && isColorOsFamily()) {
-                            Text(stringResource(R.string.setup_battery_oem), style = MaterialTheme.typography.bodySmall)
-                        }
-                    }
-                    TextButton(onClick = { onFix(issue) }) { Text(stringResource(action)) }
-                }
+    val colors = Pillion.colors
+    var open by rememberSaveable { mutableStateOf(false) }
+    PillionCard {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clip(MaterialTheme.shapes.medium)
+                .clickable(onClickLabel = stringResource(if (open) R.string.collapse else R.string.expand)) { open = !open },
+            horizontalArrangement = Arrangement.spacedBy(14.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Icon(painterResource(R.drawable.ic_shield), contentDescription = null, tint = colors.danger, modifier = Modifier.size(24.dp))
+            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                Text(stringResource(R.string.setup_title), style = MaterialTheme.typography.titleMedium, color = colors.ink, modifier = Modifier.semantics { heading() })
+                Text(
+                    pluralStringResource(R.plurals.setup_count, issues.size, issues.size),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = colors.inkSecondary,
+                )
             }
-            TextButton(onClick = onDismiss, modifier = Modifier.align(Alignment.End)) { Text(stringResource(R.string.dismiss)) }
+            Icon(
+                painterResource(if (open) R.drawable.ic_expand_less else R.drawable.ic_expand_more),
+                contentDescription = null,
+                tint = colors.ink,
+                modifier = Modifier.size(24.dp),
+            )
+        }
+        if (!open) return@PillionCard
+        Text(stringResource(R.string.setup_body), style = MaterialTheme.typography.bodyMedium, color = colors.inkSecondary)
+        issues.forEach { issue ->
+            HorizontalDivider(color = colors.hairline)
+            val (text, action) = when (issue) {
+                SetupIssue.NoContacts -> R.string.setup_no_contacts to R.string.add
+                SetupIssue.Sms -> R.string.setup_sms to R.string.allow
+                SetupIssue.Location -> R.string.setup_location to R.string.allow
+                SetupIssue.Notifications -> R.string.setup_notifications to R.string.allow
+                SetupIssue.FullScreenAlerts -> R.string.setup_full_screen to R.string.allow
+                SetupIssue.BatteryOptimization -> R.string.setup_battery to R.string.fix
+                SetupIssue.HindiVoice -> R.string.setup_hindi_voice to R.string.install
+            }
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(Space.m)) {
+                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                    Text(stringResource(text), style = MaterialTheme.typography.bodyMedium, color = colors.ink)
+                    if (issue == SetupIssue.BatteryOptimization && isColorOsFamily()) {
+                        Text(stringResource(R.string.setup_battery_oem), style = MaterialTheme.typography.bodySmall, color = colors.inkSecondary)
+                    }
+                }
+                PillButton(stringResource(action), onClick = { onFix(issue) }, minHeight = 48.dp, container = colors.surfaceHigh, content = colors.ink)
+            }
+        }
+        TextButton(onClick = onDismiss, modifier = Modifier.align(Alignment.End)) {
+            Text(stringResource(R.string.dismiss), color = colors.inkSecondary)
         }
     }
 }
@@ -569,19 +985,21 @@ private fun DebugSafetyCard(viewModel: RideViewModel, rideActive: Boolean) {
     val fatigue by viewModel.debug.fatigueInTwoMinutes.collectAsStateWithLifecycle()
     val recording by viewModel.debug.recording.collectAsStateWithLifecycle()
     val needsRide = stringResource(R.string.debug_simulate_needs_ride)
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
-    ) {
-        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-            Text(stringResource(R.string.debug_safety_title), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
-            TextButton(onClick = {
+    PillionCard {
+        Text(stringResource(R.string.debug_safety_title), style = MaterialTheme.typography.titleMedium)
+        PillButton(
+            text = stringResource(R.string.debug_simulate_crash),
+            onClick = {
                 if (!rideActive || !viewModel.simulateCrash()) Toast.makeText(context, needsRide, Toast.LENGTH_LONG).show()
-            }) { Text(stringResource(R.string.debug_simulate_crash)) }
-            DebugSwitch(stringResource(R.string.debug_record), recording, viewModel.debug::setRecording)
-            DebugSwitch(stringResource(R.string.debug_demo), demo, viewModel.debug::setDemoMode)
-            DebugSwitch(stringResource(R.string.debug_fatigue), fatigue, viewModel.debug::setFatigueInTwoMinutes)
-        }
+            },
+            icon = R.drawable.ic_car_crash,
+            container = Pillion.colors.surfaceHigh,
+            content = Pillion.colors.ink,
+            minHeight = 48.dp,
+        )
+        DebugSwitch(stringResource(R.string.debug_record), recording, viewModel.debug::setRecording)
+        DebugSwitch(stringResource(R.string.debug_demo), demo, viewModel.debug::setDemoMode)
+        DebugSwitch(stringResource(R.string.debug_fatigue), fatigue, viewModel.debug::setFatigueInTwoMinutes)
     }
 }
 
@@ -597,121 +1015,20 @@ private fun DebugSwitch(label: String, checked: Boolean, onChange: (Boolean) -> 
 @Composable
 private fun TestOrderCard(order: Order, onSavePhone: (String) -> Unit) {
     var phone by rememberSaveable(order.customerPhone) { mutableStateOf(order.customerPhone) }
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
-    ) {
-        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Text(
-                stringResource(R.string.test_order_title),
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.SemiBold,
+    PillionCard {
+        Text(stringResource(R.string.test_order_title), style = MaterialTheme.typography.titleMedium)
+        Text("${order.customerName} · ${order.dropAddress}", style = MaterialTheme.typography.bodyMedium)
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(Space.s)) {
+            OutlinedTextField(
+                value = phone,
+                onValueChange = { phone = it },
+                label = { Text(stringResource(R.string.test_order_phone)) },
+                singleLine = true,
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone),
+                modifier = Modifier.weight(1f),
             )
-            Text("${order.customerName} · ${order.dropAddress}", style = MaterialTheme.typography.bodyMedium)
-            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                OutlinedTextField(
-                    value = phone,
-                    onValueChange = { phone = it },
-                    label = { Text(stringResource(R.string.test_order_phone)) },
-                    singleLine = true,
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone),
-                    modifier = Modifier.weight(1f),
-                )
-                TextButton(onClick = { onSavePhone(phone) }, enabled = phone != order.customerPhone) {
-                    Text(stringResource(R.string.save))
-                }
-            }
-        }
-    }
-}
-
-/** Works with or without a ride, voice or internet: a 5-second cancel window, then SMS. */
-@Composable
-private fun SosButton(enabled: Boolean, onClick: () -> Unit) {
-    val description = stringResource(R.string.sos_button_description)
-    Button(
-        onClick = onClick,
-        enabled = enabled,
-        modifier = Modifier
-            .size(width = 96.dp, height = 72.dp)
-            .semantics { contentDescription = description },
-        shape = RoundedCornerShape(20.dp),
-        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFDC2626), contentColor = Color.White),
-    ) {
-        Text(stringResource(R.string.sos_button), style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Black)
-    }
-}
-
-@Composable
-private fun RideButton(
-    active: Boolean,
-    ending: Boolean,
-    alertOn: Boolean,
-    onStartRide: () -> Unit,
-    onEndRide: () -> Unit,
-    modifier: Modifier = Modifier,
-) {
-    Button(
-        onClick = if (active) onEndRide else onStartRide,
-        // During a safety alert the rider answers it first.
-        enabled = !ending && !(active && alertOn),
-        modifier = modifier.height(72.dp),
-        shape = RoundedCornerShape(20.dp),
-        colors = if (active) {
-            ButtonDefaults.buttonColors(
-                containerColor = MaterialTheme.colorScheme.error,
-                contentColor = Color.White,
-            )
-        } else {
-            ButtonDefaults.buttonColors()
-        },
-    ) {
-        Text(
-            text = stringResource(
-                when {
-                    ending -> R.string.ending_ride
-                    active -> R.string.end_ride
-                    else -> R.string.start_ride
-                }
-            ),
-            style = MaterialTheme.typography.titleLarge,
-            fontWeight = FontWeight.Bold,
-        )
-    }
-}
-
-@Composable
-private fun MessageCard(
-    title: String,
-    body: String? = null,
-    onDismiss: (() -> Unit)? = null,
-    actionLabel: String? = null,
-    onAction: () -> Unit = {},
-    isError: Boolean = false,
-) {
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(
-            containerColor = if (isError) MaterialTheme.colorScheme.errorContainer else MaterialTheme.colorScheme.surfaceVariant,
-            contentColor = if (isError) MaterialTheme.colorScheme.onErrorContainer else MaterialTheme.colorScheme.onSurface,
-        ),
-    ) {
-        Column(Modifier.padding(16.dp)) {
-            Text(title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
-            body?.let {
-                Spacer(Modifier.height(4.dp))
-                Text(it, style = MaterialTheme.typography.bodyMedium)
-            }
-            if (onDismiss != null || actionLabel != null) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.End,
-                ) {
-                    onDismiss?.let { TextButton(onClick = it) { Text(stringResource(R.string.dismiss)) } }
-                    if (actionLabel != null) {
-                        TextButton(onClick = onAction) { Text(actionLabel) }
-                    }
-                }
+            TextButton(onClick = { onSavePhone(phone) }, enabled = phone != order.customerPhone) {
+                Text(stringResource(R.string.save))
             }
         }
     }
@@ -758,7 +1075,7 @@ private fun Context.openFullScreenAlertSettings() {
 }
 
 /** Android's own "stop optimising battery usage?" dialog; the list screen if a phone lacks it. */
-private fun Context.askToIgnoreBatteryOptimization() {
+fun Context.askToIgnoreBatteryOptimization() {
     val ask = Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS, Uri.fromParts("package", packageName, null))
     if (!startSafely(ask)) startSafely(Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS))
 }

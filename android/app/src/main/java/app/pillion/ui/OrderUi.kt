@@ -1,11 +1,14 @@
 package app.pillion.ui
 
 import android.graphics.BitmapFactory
+import androidx.annotation.DrawableRes
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
@@ -16,6 +19,7 @@ import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.FilterChip
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
@@ -31,6 +35,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
@@ -48,6 +53,11 @@ import app.pillion.order.OrderDraft
 import app.pillion.order.ScanFailure
 import app.pillion.order.ScanSource
 import app.pillion.order.ScanState
+import app.pillion.ui.components.PillButton
+import app.pillion.ui.components.PillionCard
+import app.pillion.ui.components.Tag
+import app.pillion.ui.theme.Pillion
+import app.pillion.ui.theme.Space
 
 /** The order Pillion acts on (ETA, SMS, call), and the ways to scan a new one. */
 @Composable
@@ -58,61 +68,64 @@ fun ActiveOrderCard(
     onScanCamera: () -> Unit,
     onUseDemo: () -> Unit,
 ) {
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
-    ) {
-        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-            Text(
-                text = when {
-                    order.isDemo -> stringResource(R.string.order_demo)
-                    order.orderId.isNotBlank() -> "${stringResource(R.string.order_current)} · ${stringResource(R.string.order_id, order.orderId)}"
-                    else -> stringResource(R.string.order_current)
-                },
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.SemiBold,
-                modifier = Modifier.semantics { heading() },
-            )
-            Text(
-                text = listOf(order.customerName, order.dropArea).filter { it.isNotBlank() }.joinToString(" · "),
-                style = MaterialTheme.typography.bodyLarge,
-            )
-            Text(
-                text = when {
-                    order.customerPhone.isNotBlank() -> order.customerPhone
-                    order.phoneMasked -> stringResource(R.string.order_number_masked)
-                    else -> stringResource(R.string.order_no_number)
-                },
-                style = MaterialTheme.typography.bodyMedium,
-            )
-            if (!order.isDemo) {
-                Text(
-                    text = stringResource(
-                        when {
-                            locatingDrop -> R.string.order_drop_locating
-                            order.dropAddress.isBlank() -> R.string.order_drop_no_address
-                            else -> when (val drop = order.drop) {
-                                is DropLocation.Found -> if (drop.approximate) R.string.order_drop_approximate else R.string.order_drop_found
-                                DropLocation.NotFound -> R.string.order_drop_not_found
-                                DropLocation.Unchecked -> R.string.order_drop_unchecked
-                            }
+    val colors = Pillion.colors
+    PillionCard {
+        Tag(
+            text = when {
+                order.isDemo -> stringResource(R.string.order_demo)
+                order.orderId.isNotBlank() -> "${stringResource(R.string.order_current)} · ${stringResource(R.string.order_id, order.orderId)}"
+                else -> stringResource(R.string.order_current)
+            },
+            modifier = Modifier.semantics { heading() },
+        )
+        if (order.customerName.isNotBlank()) {
+            Text(order.customerName, style = MaterialTheme.typography.titleLarge, color = colors.ink)
+        }
+        if (order.dropArea.isNotBlank()) OrderDetail(R.drawable.ic_location_on, order.dropArea)
+        OrderDetail(
+            R.drawable.ic_call,
+            when {
+                order.customerPhone.isNotBlank() -> order.customerPhone
+                order.phoneMasked -> stringResource(R.string.order_number_masked)
+                else -> stringResource(R.string.order_no_number)
+            },
+        )
+        if (!order.isDemo) {
+            val notFound = !locatingDrop && order.drop == DropLocation.NotFound
+            OrderDetail(
+                icon = if (notFound) R.drawable.ic_error else R.drawable.ic_info,
+                text = stringResource(
+                    when {
+                        locatingDrop -> R.string.order_drop_locating
+                        order.dropAddress.isBlank() -> R.string.order_drop_no_address
+                        else -> when (val drop = order.drop) {
+                            is DropLocation.Found -> if (drop.approximate) R.string.order_drop_approximate else R.string.order_drop_found
+                            DropLocation.NotFound -> R.string.order_drop_not_found
+                            DropLocation.Unchecked -> R.string.order_drop_unchecked
                         }
-                    ),
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = if (!locatingDrop && order.drop == DropLocation.NotFound) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-                OutlinedButton(onClick = onScanScreenshot, modifier = Modifier.height(48.dp)) { Text(stringResource(R.string.order_scan_gallery)) }
-                OutlinedButton(onClick = onScanCamera, modifier = Modifier.height(48.dp)) { Text(stringResource(R.string.order_scan_camera)) }
-                if (!order.isDemo) TextButton(onClick = onUseDemo) { Text(stringResource(R.string.order_use_demo)) }
-            }
-            Text(
-                stringResource(R.string.order_share_hint),
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    }
+                ),
+                color = if (notFound) colors.danger else colors.inkSecondary,
             )
         }
+        FlowRow(
+            modifier = Modifier.padding(top = Space.s),
+            horizontalArrangement = Arrangement.spacedBy(Space.s),
+            verticalArrangement = Arrangement.spacedBy(Space.s),
+        ) {
+            PillButton(stringResource(R.string.order_scan_gallery), onScanScreenshot, icon = R.drawable.ic_photo_library, container = colors.surfaceHigh, content = colors.ink, minHeight = 48.dp)
+            PillButton(stringResource(R.string.order_scan_camera), onScanCamera, icon = R.drawable.ic_photo_camera, container = colors.surfaceHigh, content = colors.ink, minHeight = 48.dp)
+            if (!order.isDemo) TextButton(onClick = onUseDemo, modifier = Modifier.heightIn(min = 48.dp)) { Text(stringResource(R.string.order_use_demo)) }
+        }
+        Text(stringResource(R.string.order_share_hint), style = MaterialTheme.typography.bodySmall, color = colors.inkSecondary)
+    }
+}
+
+@Composable
+private fun OrderDetail(@DrawableRes icon: Int, text: String, color: Color = Pillion.colors.inkSecondary) {
+    Row(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.Top) {
+        Icon(painterResource(icon), contentDescription = null, tint = color, modifier = Modifier.padding(top = 2.dp).size(20.dp))
+        Text(text, style = MaterialTheme.typography.bodyMedium, color = color)
     }
 }
 

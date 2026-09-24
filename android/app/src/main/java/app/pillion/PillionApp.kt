@@ -4,9 +4,12 @@ import android.app.Application
 import android.content.Context
 import app.pillion.data.ActiveOrderSource
 import app.pillion.data.EarningsDb
+import app.pillion.data.UiPrefs
 import app.pillion.order.OrderScanner
 import app.pillion.safety.EmergencyContacts
 import app.pillion.safety.SafetyMonitor
+import app.pillion.ui.theme.preloadFonts
+import kotlin.concurrent.thread
 
 /**
  * Process-wide objects. Safety lives here rather than in a ViewModel: a crash alert must run with
@@ -19,6 +22,12 @@ class PillionApp : Application() {
     /** The active order, and the scanner that reads one from a shared screenshot, picked image or photo. */
     val orders by lazy { ActiveOrderSource(this) }
     val scanner by lazy { OrderScanner() }
+    val uiPrefs by lazy { UiPrefs(this) }
+
+    override fun onCreate() {
+        super.onCreate()
+        thread(name = "font-preload") { preloadFonts(this) }
+    }
 }
 
 val Context.pillion: PillionApp get() = applicationContext as PillionApp

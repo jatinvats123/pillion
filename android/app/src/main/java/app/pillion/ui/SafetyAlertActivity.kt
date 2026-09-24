@@ -37,7 +37,8 @@ class SafetyAlertActivity : ComponentActivity() {
         )
         val safety = pillion.safety
         setContent {
-            PillionTheme {
+            // Always dark and loud, whatever the app theme: it may show over a lock screen at night.
+            PillionTheme(dark = true) {
                 val state by safety.state.collectAsStateWithLifecycle()
                 val voice by safety.voiceConnected.collectAsStateWithLifecycle()
                 LaunchedEffect(state) { if (state == SafetyState.Idle) finish() }

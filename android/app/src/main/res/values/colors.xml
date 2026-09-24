@@ -1,5 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <color name="background">#FF101114</color>
-    <color name="launcher_background">#FF101114</color>
+    <!-- Window colour before Compose draws (the theme's background token), so there's no flash. -->
+    <color name="background">#FFF6F3EE</color>
+    <color name="launcher_background">#FF111110</color>
+    <!-- The crash alert is always dark, whatever the app theme. -->
+    <color name="alert_window">#FF111110</color>
 </resources>

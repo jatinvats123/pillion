@@ -114,6 +114,17 @@ class VoiceSession(context: Context) {
     private val _serverRequests = MutableSharedFlow<JSONObject>(extraBufferCapacity = 16, onBufferOverflow = BufferOverflow.DROP_OLDEST)
     /** `pillion.request` messages: the backend asking the phone to act (GPS, SMS, call…) for a tool. */
     val serverRequests: SharedFlow<JSONObject> = _serverRequests.asSharedFlow()
+
+    // Agora volume indication, 0..1, every 100 ms while connected (the ride screen's orb follows them).
+    private val _riderLevel = MutableStateFlow(0f)
+    val riderLevel: StateFlow<Float> = _riderLevel.asStateFlow()
+    private val _agentLevel = MutableStateFlow(0f)
+    val agentLevel: StateFlow<Float> = _agentLevel.asStateFlow()
+
+    private val _micMuted = MutableStateFlow(false)
+    /** The rider muted Pillion: the mic stays captured locally but nothing is sent to the agent. */
+    val micMuted: StateFlow<Boolean> = _micMuted.asStateFlow()
+
     private val latencyTracker = LatencyTracker { report ->
         Log.i(TAG, "Latency $report")
         _latency.tryEmit(report)
@@ -165,8 +176,10 @@ class VoiceSession(context: Context) {
         engine.enableAudio()
         engine.setDefaultAudioRoutetoSpeakerphone(true)
         applyAiAudioParameters(engine, Constants.AUDIO_ROUTE_DEFAULT)
-        // Debug builds track the rider's voice activity (200 ms resolution) to time replies end to end.
-        if (BuildConfig.DEBUG) engine.enableAudioVolumeIndication(200, 3, true)
+        // Mic and agent loudness for the orb; debug builds also time replies end to end from the
+        // rider's voice activity (100 ms resolution).
+        engine.enableAudioVolumeIndication(VOLUME_INTERVAL_MS, 3, true)
+        if (_micMuted.value) engine.muteLocalAudioStream(true)
 
         val joined = CompletableDeferred<Unit>()
         joinResult = joined
@@ -205,6 +218,15 @@ class VoiceSession(context: Context) {
         _connection.value = ConnectionState.Disconnected
         _agentPresent.value = false
         _agentState.value = AgentState.Unknown
+        _riderLevel.value = 0f
+        _agentLevel.value = 0f
+    }
+
+    /** Stops or resumes sending the rider's voice to Pillion; kept across a voice reconnect. */
+    suspend fun setMicMuted(muted: Boolean) = withContext(Dispatchers.Main) {
+        _micMuted.value = muted
+        rtcEngine?.muteLocalAudioStream(muted)
+        Log.i(TAG, "Mic ${if (muted) "muted" else "unmuted"} by the rider")
     }
 
     /**
@@ -304,10 +326,16 @@ class VoiceSession(context: Context) {
             Log.i(TAG, "Local audio state=$state reason=$reason")
         }
 
-        // uid 0 is the local mic; vad 1 means the rider is speaking.
+        // Two reports per interval: the local one (uid 0, the mic; vad 1 means the rider is
+        // speaking) and the remote one (the loudest remote users; the agent drops out when silent).
         override fun onAudioVolumeIndication(speakers: Array<out AudioVolumeInfo>?, totalVolume: Int) {
-            if (speakers.orEmpty().any { it.uid == 0 && it.vad == 1 }) {
-                latencyTracker.onRiderVoice(System.currentTimeMillis())
+            val list = speakers.orEmpty()
+            val local = list.firstOrNull { it.uid == 0 }
+            if (local != null) {
+                _riderLevel.value = if (_micMuted.value) 0f else local.volume / 255f
+                if (BuildConfig.DEBUG && local.vad == 1) latencyTracker.onRiderVoice(System.currentTimeMillis())
+            } else {
+                _agentLevel.value = (list.firstOrNull { it.uid == ride?.agentUid }?.volume ?: 0) / 255f
             }
         }
     }
@@ -494,6 +522,7 @@ class VoiceSession(context: Context) {
         /** RTM user id the backend sends from (see backend/src/rtm.js). */
         const val SERVER_RTM_ID = "pillion-server"
         const val JOIN_TIMEOUT_MS = 15_000L
+        const val VOLUME_INTERVAL_MS = 100
         const val MAX_LINES = 200
 
         // Agora audio routes where the mic is not next to a loudspeaker.
