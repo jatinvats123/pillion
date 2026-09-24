@@ -1,5 +1,5 @@
 import { config } from '../config.js';
-import { fetchJson, MapsError } from './common.js';
+import { distanceKm, fetchJson, MapsError } from './common.js';
 
 // Google Maps Platform (MAPS_PROVIDER=google): Routes API + Places API (New), both with the
 // TWO_WHEELER travel mode (beta; well covered in India). Routes use live traffic.
@@ -34,13 +34,13 @@ const SEARCH_TEXT = {
   parking: 'two wheeler parking',
 };
 
-export async function routeTo(origin, destinationAddress) {
+export async function routeTo(origin, to) {
   const json = await post(
     'https://routes.googleapis.com/directions/v2:computeRoutes',
     'routes.distanceMeters,routes.duration,routes.staticDuration',
     {
       origin: { location: { latLng: latLng(origin) } },
-      destination: { address: destinationAddress },
+      destination: typeof to === 'string' ? { address: to } : { location: { latLng: latLng(to) } },
       travelMode: 'TWO_WHEELER',
       routingPreference: 'TRAFFIC_AWARE',
       regionCode: 'IN',
@@ -83,4 +83,35 @@ export async function placesNear(origin, { category, query }, count = 3) {
       byRoad: Boolean(leg),
     };
   });
+}
+
+// Scanned drop addresses via the Geocoding API (it must be enabled on the key). Not yet run against
+// the live API: Google billing verification is pending (see CLAUDE.md).
+export async function geocodeAddress(address, { area, near }) {
+  if (!config.maps.googleApiKey) throw new MapsError('maps_not_configured');
+  const json = await fetchJson(
+    `https://maps.googleapis.com/maps/api/geocode/json?${new URLSearchParams({
+      address,
+      components: 'country:IN',
+      region: 'in',
+      key: config.maps.googleApiKey,
+    })}`,
+  );
+  if (json.status === 'ZERO_RESULTS') return { status: 'not_found' };
+  if (json.status !== 'OK') throw new MapsError(`maps_geocode_${json.status}`);
+  const hits = json.results
+    .map((r) => ({ ...r, lat: r.geometry.location.lat, lng: r.geometry.location.lng }))
+    .filter((r) => !near || distanceKm(r, near) <= 20);
+  const top = hits[0];
+  if (!top) return { status: 'not_found' };
+  if (hits.some((h) => distanceKm(h, top) > 3)) return { status: 'ambiguous' };
+  const exact = !top.partial_match && ['ROOFTOP', 'RANGE_INTERPOLATED'].includes(top.geometry.location_type);
+  const locality = top.address_components.find((c) => c.types.includes('sublocality_level_1') || c.types.includes('sublocality'));
+  return {
+    status: exact ? 'found' : 'approximate',
+    lat: top.lat,
+    lng: top.lng,
+    area: locality?.long_name ?? area ?? null,
+    label: top.formatted_address,
+  };
 }

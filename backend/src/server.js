@@ -1,5 +1,6 @@
 import express from 'express';
 import { config, configWarnings, mapsConfigured, validateConfig } from './config.js';
+import { geocodeAddress, MapsError } from './maps/index.js';
 import { activeAgentCount, startRide, stopAllRides, stopRide } from './agora.js';
 import { jevEnabled } from './jev.js';
 import { answerFromPhone, rideForToken } from './rides.js';
@@ -113,6 +114,28 @@ app.post(
     }
   }),
 );
+
+// The rider set a scanned order: where is its drop? Asked before or during a ride, so it needs no
+// ride token; local network only, like starting a ride (it spends the maps quota).
+app.post('/order/geocode', localOnly, async (req, res) => {
+  const address = String(req.body?.address ?? '').trim().slice(0, 300);
+  const area = String(req.body?.area ?? '').trim().slice(0, 80) || null;
+  const lat = Number(req.body?.near?.lat);
+  const lng = Number(req.body?.near?.lng);
+  const near = Number.isFinite(lat) && Number.isFinite(lng) ? { lat, lng } : null;
+  if (!address) return res.status(400).json({ error: 'address is required' });
+  if (!mapsConfigured()) return res.status(503).json({ error: 'maps_not_configured' });
+  const startedAt = Date.now();
+  try {
+    const result = await geocodeAddress(address, { area, near });
+    console.log(`[geocode] ${result.status} in ${Date.now() - startedAt} ms${near ? '' : ' (no rider position)'}${result.area ? ` · ${result.area}` : ''}`);
+    res.json(result);
+  } catch (error) {
+    const code = error instanceof MapsError ? error.message.split(':')[0] : 'internal_error';
+    console.warn(`[geocode] failed: ${error.message}`);
+    res.status(error instanceof MapsError ? 424 : 500).json({ error: code });
+  }
+});
 
 // Testing without speaking: sends text into the ride's LLM as if the rider had said it.
 app.post(

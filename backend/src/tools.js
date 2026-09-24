@@ -1,6 +1,6 @@
 import { config } from './config.js';
 import { classifyTurn, JevSkipped } from './jev.js';
-import { MapsError, PLACE_CATEGORIES, placesNear, routeTo } from './maps/index.js';
+import { geocodeAddress, MapsError, PLACE_CATEGORIES, placesNear, routeTo } from './maps/index.js';
 import { askPhone, notifyRider, PhoneError, prefetch, takePrefetched } from './rides.js';
 
 // Pillion's actions, exposed to the LLM as Agora ConvoAI custom tools (llm.tools). Agora's cloud
@@ -202,9 +202,12 @@ async function confirmationGate(ride, pending) {
 
 async function nextDropRoute(ride) {
   const [location, order] = await Promise.all([askPhone(ride, 'location'), askPhone(ride, 'order')]);
-  const route = await routeTo(location, order.drop_address);
+  const drop = await dropPoint(order, location);
+  const route = await routeTo(location, drop.destination);
   return {
     drop_address: order.drop_address,
+    // Only the drop's locality is known (scanned address): the time is rough.
+    ...(drop.approximate && { drop_precision: 'area' }),
     distance_km: round1(route.distanceMeters / 1000),
     minutes: Math.max(1, Math.round(route.durationSeconds / 60)),
     // 'live' (Google) or 'typical_estimate' (Geoapify: usual traffic, not today's).
@@ -212,6 +215,24 @@ async function nextDropRoute(ride) {
     ...(route.trafficDelaySeconds != null && { traffic_delay_minutes: Math.round(route.trafficDelaySeconds / 60) }),
     ...locationAge(location),
   };
+}
+
+/**
+ * Where to route to. A scanned order comes with the drop's point (looked up when the rider set it)
+ * or `drop_location: 'not_found'`, or 'unchecked' if the server couldn't be reached then. The
+ * seeded demo order sends only its address, geocoded as before.
+ */
+async function dropPoint(order, near) {
+  if (Number.isFinite(order.drop_lat) && Number.isFinite(order.drop_lng)) {
+    return { destination: { lat: order.drop_lat, lng: order.drop_lng }, approximate: order.drop_precision === 'area' };
+  }
+  if (order.drop_location === 'not_found') throw new ToolError(409, 'drop_location_unknown');
+  if (order.drop_location === 'unchecked') {
+    const found = await geocodeAddress(order.drop_address, { area: order.drop_area || null, near });
+    if (!('lat' in found)) throw new ToolError(409, 'drop_location_unknown', { reason: found.status });
+    return { destination: found, approximate: found.status === 'approximate' };
+  }
+  return { destination: order.drop_address, approximate: false };
 }
 
 // Without a fresh GPS fix in time the phone sends its last one (up to 5 min old); say so rather

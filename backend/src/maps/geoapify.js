@@ -1,5 +1,5 @@
 import { config } from '../config.js';
-import { fetchJson, MapsError } from './common.js';
+import { distanceKm, fetchJson, MapsError, pinCodeOf } from './common.js';
 
 // Geoapify (MAPS_PROVIDER=geoapify; free tier, OpenStreetMap data). No live traffic: routes use
 // Geoapify's "approximated" model, which slows typically busy roads (free-flow said 8 min for
@@ -51,8 +51,8 @@ async function geocode(address, near) {
   return point;
 }
 
-export async function routeTo(origin, destinationAddress) {
-  const destination = await geocode(destinationAddress, origin);
+export async function routeTo(origin, to) {
+  const destination = typeof to === 'string' ? await geocode(to, origin) : to;
   const json = await fetchJson(
     url('/v1/routing', {
       waypoints: `${origin.lat},${origin.lng}|${destination.lat},${destination.lng}`,
@@ -114,4 +114,88 @@ export async function placesNear(origin, { category, query }, count = 3) {
   return places
     .sort((a, b) => (a.distanceMeters ?? Infinity) - (b.distanceMeters ?? Infinity))
     .map(({ lat, lng, ...place }) => place);
+}
+
+// ---- Scanned drop addresses. House-level geocoding of Indian addresses on OpenStreetMap is
+// unreliable, and Geoapify's own confidence doesn't show it ("Laxmi Nagar Metro Station" scores 0
+// and is exact; "H.No 45, Gali No 3, Mandawali" scores 0.5 and lands on a Gali No 3 5 km away).
+// The locality is the reliable part, checked against the PIN code's area (or the rider's
+// surroundings). A building or landmark counts as found only when it agrees with both; otherwise
+// the locality is used, marked approximate. Streets never count as found: every colony has a "Gali No 3".
+
+const PRECISE_TYPES = new Set(['building', 'amenity']);
+// OSM tags villages and small towns as "city".
+const AREA_TYPES = new Set(['suburb', 'district', 'city', 'county']);
+const PIN_RADIUS_KM = 6;
+const RIDER_RADIUS_KM = 20; // deliveries are local
+const SAME_PLACE_KM = 1.5;
+const IN_LOCALITY_KM = 2;
+const SAME_AREA_KM = 3;
+
+async function search(params, bias) {
+  const json = await fetchJson(
+    url('/v1/geocode/search', {
+      ...params,
+      filter: 'countrycode:in',
+      ...(bias && { bias: `proximity:${bias.lng},${bias.lat}` }),
+      limit: 5,
+      format: 'json',
+    }),
+  );
+  return (json.results ?? []).map((r) => ({
+    lat: r.lat,
+    lng: r.lon,
+    type: r.result_type,
+    match: r.rank?.match_type,
+    // A locality's own name, else the suburb; tehsils are administrative, riders don't use them.
+    area: [AREA_TYPES.has(r.result_type) ? r.name : null, r.suburb, r.district].find((a) => a && !/tehsil/i.test(a)) ?? null,
+    label: r.formatted ?? '',
+  }));
+}
+
+const located = new Map();
+
+export async function geocodeAddress(address, { area, near }) {
+  const key = `${address}|${area ?? ''}|${near ? `${near.lat.toFixed(2)},${near.lng.toFixed(2)}` : ''}`;
+  if (located.has(key)) return located.get(key);
+
+  // Three lookups at once: the PIN code's area, the full address and the locality. A slow one (an
+  // unbiased "Gali No 3" search can take over 5 s) costs that lookup, not the answer; it's an
+  // error only when neither the address nor the locality search answered.
+  const pin = pinCodeOf(address);
+  const settled = await Promise.allSettled([
+    pin ? search({ postcode: pin }) : [],
+    search({ text: address }, near),
+    area ? search({ text: pin ? `${area}, ${pin}` : area }, near) : [],
+  ]);
+  const [pinHits, hits, areaHits] = settled.map((s) => (s.status === 'fulfilled' ? s.value : []));
+  if (settled[1].status === 'rejected' && !areaHits.length) throw settled[1].reason;
+
+  const anchor = pinHits[0] ?? near;
+  const radius = pinHits[0] ? PIN_RADIUS_KM : RIDER_RADIUS_KM;
+  const inArea = (p) => !anchor || distanceKm(p, anchor) <= radius;
+  const point = (p, status) => ({ status, lat: p.lat, lng: p.lng, area: p.area, label: p.label });
+
+  // The locality, preferring places that carry its name (a Devanagari name won't match; then all).
+  const localities = [...areaHits, ...hits].filter((p) => AREA_TYPES.has(p.type) && inArea(p));
+  const named = area ? localities.filter((p) => p.label.toLowerCase().includes(area.toLowerCase())) : [];
+  const places = named.length ? named : localities;
+  const locality = places.length && places.every((p) => distanceKm(p, places[0]) <= SAME_AREA_KM) ? places[0] : null;
+
+  const precise = hits.find((h) => PRECISE_TYPES.has(h.type) && inArea(h) && (h === hits[0] || locality));
+  const exact =
+    precise &&
+    (precise.match === 'full_match' || precise.match === 'match_by_building') &&
+    (!locality || distanceKm(precise, locality) <= IN_LOCALITY_KM) &&
+    !hits.some((h) => h.type === precise.type && inArea(h) && distanceKm(h, precise) > SAME_PLACE_KM);
+
+  let result;
+  if (exact) result = point(precise, 'found');
+  else if (locality) result = point(locality, 'approximate');
+  else if (places.length) result = { status: 'ambiguous' };
+  else result = { status: 'not_found' };
+
+  if (located.size > 100) located.clear();
+  if (settled.every((s) => s.status === 'fulfilled')) located.set(key, result);
+  return result;
 }
