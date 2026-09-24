@@ -9,6 +9,12 @@ import app.pillion.data.BackendException
 import app.pillion.data.Order
 import app.pillion.data.RideCredentials
 import app.pillion.device.RidePermission
+import app.pillion.order.LoadedImage
+import app.pillion.order.OrderDraft
+import app.pillion.order.OrderLines
+import app.pillion.order.ScanSource
+import app.pillion.order.ScanState
+import app.pillion.pillion
 import app.pillion.ride.RideRepository
 import app.pillion.ride.RideService
 import app.pillion.safety.SafetyState
@@ -77,9 +83,17 @@ class RideViewModel(application: Application) : AndroidViewModel(application) {
     private var rideStartedAt = 0L
     private var rideServices: Job? = null
 
-    private val _testOrder = MutableStateFlow<Order>(repository.orders.activeOrder())
-    /** Debug builds: the seeded order, whose customer number can point at a test phone. */
-    val testOrder: StateFlow<Order> = _testOrder.asStateFlow()
+    private val scanner = application.pillion.scanner
+
+    /** The scanned order, or the seeded demo order (whose number debug builds can set). */
+    val order: StateFlow<Order> = repository.orders.order
+    val scanState: StateFlow<ScanState> = scanner.state
+    private val _locatingDrop = MutableStateFlow(false)
+    /** The drop of a just-set order is being looked up on the map. */
+    val locatingDrop: StateFlow<Boolean> = _locatingDrop.asStateFlow()
+    private val _stopToScan = MutableStateFlow(false)
+    /** Camera or gallery was refused because the rider is moving. */
+    val stopToScan: StateFlow<Boolean> = _stopToScan.asStateFlow()
 
     val safetyState: StateFlow<SafetyState> = safety.state
     val emergencyContactCount: StateFlow<Int> = safety.contacts.contacts.map { it.size }
@@ -212,9 +226,57 @@ class RideViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun setTestCustomerPhone(number: String) {
-        repository.orders.setCustomerPhone(number)
-        _testOrder.value = repository.orders.activeOrder()
+        repository.orders.setDemoCustomerPhone(number)
     }
+
+    /**
+     * Camera and gallery need the rider looking at the screen, so not while GPS says they're
+     * moving; Pillion says so if the voice is on. (Sharing a screenshot isn't gated: one tap.)
+     */
+    fun scanAllowed(): Boolean {
+        val speed = repository.riderSpeedKmh()
+        if (speed == null || speed < MOVING_KMH) return true
+        _stopToScan.value = true
+        ride?.let { current -> viewModelScope.launch { repository.sayToRider(current, OrderLines::scanWhenStopped) } }
+        return false
+    }
+
+    fun dismissStopToScan() {
+        _stopToScan.value = false
+    }
+
+    fun scanImage(source: ScanSource, load: suspend () -> LoadedImage) {
+        _stopToScan.value = false
+        scanner.scan(source, load)
+    }
+
+    /** OCR found nothing usable: the rider types the order in. */
+    fun enterOrderManually() = scanner.enterManually()
+
+    fun dismissScan() = scanner.dismiss()
+
+    /**
+     * The rider checked the scanned order and set it: it's active at once (SMS and call work),
+     * then its drop is looked up for ETA, and Pillion confirms by voice if connected.
+     */
+    fun confirmOrder(draft: OrderDraft) {
+        val order = draft.toOrder()
+        repository.orders.set(order)
+        scanner.dismiss()
+        _locatingDrop.value = true
+        viewModelScope.launch {
+            val located = try {
+                val (drop, area) = repository.locateDrop(order)
+                repository.orders.updateDrop(order, drop, area)
+                order.copy(drop = drop, dropArea = area)
+            } finally {
+                _locatingDrop.value = false
+            }
+            ride?.let { current -> repository.sayToRider(current) { hindi -> OrderLines.orderSet(located, hindi) } }
+        }
+    }
+
+    fun useDemoOrder() = repository.orders.clear()
 
     /** The on-screen SOS button: works with or without a ride, voice or internet. */
     fun sos() {
@@ -297,6 +359,7 @@ class RideViewModel(application: Application) : AndroidViewModel(application) {
 
     private companion object {
         const val TAG = "RideViewModel"
+        const val MOVING_KMH = 10f
         val VOICE_STATUSES = setOf(
             RideStatus.Connecting, RideStatus.Listening, RideStatus.Thinking, RideStatus.Speaking, RideStatus.Reconnecting,
         )

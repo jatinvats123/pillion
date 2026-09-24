@@ -5,7 +5,9 @@ import android.content.Context
 import android.content.pm.PackageManager
 import android.util.Log
 import androidx.core.content.ContextCompat
+import app.pillion.data.DropLocation
 import app.pillion.data.EarningsDb
+import app.pillion.data.Order
 import app.pillion.data.OrderSource
 import app.pillion.safety.ManualSosResult
 import app.pillion.safety.SafetyMonitor
@@ -81,17 +83,28 @@ class DeviceActions(
             .put("age_s", location.ageMs(fix) / 1000)
     }
 
-    // Name and address only: the customer's number never leaves the phone.
+    // Name and drop only: the customer's number never leaves the phone. A scanned order also says
+    // where its drop is (the demo order sends its address alone, as before).
     private fun order(): JSONObject {
         val order = orders.activeOrder() ?: throw DeviceActionException("no_active_order")
-        return JSONObject().put("customer_name", order.customerName).put("drop_address", order.dropAddress)
+        return JSONObject().put("customer_name", order.customerName).put("drop_address", order.dropAddress).apply {
+            if (order.isDemo) return@apply
+            when (val drop = order.drop) {
+                is DropLocation.Found -> {
+                    put("drop_lat", drop.lat).put("drop_lng", drop.lng)
+                    if (drop.approximate) put("drop_precision", "area")
+                }
+                DropLocation.NotFound -> put("drop_location", "not_found")
+                DropLocation.Unchecked -> put("drop_location", "unchecked").put("drop_area", order.dropArea)
+            }
+        }
     }
 
     private suspend fun sendSms(message: String): JSONObject {
         if (message.isBlank()) throw DeviceActionException("message_missing")
         if (!sms.hasPermission()) throw DeviceActionException("permission_denied", RidePermission.Sms)
         val order = orders.activeOrder() ?: throw DeviceActionException("no_active_order")
-        val number = customerNumber(order.customerPhone)
+        val number = customerNumber(order)
         val sent = sms.send(number, message, SMS_TIMEOUT_MS) { delivered -> onSmsDelivery(order.customerName, delivered) }
         if (!sent) throw DeviceActionException("sms_failed")
         return JSONObject().put("status", "sent").put("customer_name", order.customerName)
@@ -114,7 +127,7 @@ class DeviceActions(
     private fun placeCall(): JSONObject {
         if (!granted(Manifest.permission.CALL_PHONE)) throw DeviceActionException("permission_denied", RidePermission.Call)
         val order = orders.activeOrder() ?: throw DeviceActionException("no_active_order")
-        val number = customerNumber(order.customerPhone)
+        val number = customerNumber(order)
         val placed = try {
             startPhoneCall(appContext, number)
         } catch (_: SecurityException) {
@@ -124,9 +137,9 @@ class DeviceActions(
         return JSONObject().put("status", "calling").put("customer_name", order.customerName)
     }
 
-    private fun customerNumber(raw: String): String =
-        raw.filter { it.isDigit() || it == '+' }.takeIf { it.length >= 7 }
-            ?: throw DeviceActionException("no_customer_number")
+    private fun customerNumber(order: Order): String =
+        order.customerPhone.filter { it.isDigit() || it == '+' }.takeIf { it.length >= 7 }
+            ?: throw DeviceActionException(if (order.phoneMasked) "customer_number_masked" else "no_customer_number")
 
     private fun granted(permission: String) =
         ContextCompat.checkSelfPermission(appContext, permission) == PackageManager.PERMISSION_GRANTED

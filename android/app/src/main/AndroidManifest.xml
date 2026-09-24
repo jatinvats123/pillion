@@ -5,6 +5,8 @@
     <!-- SMS/call and GPS actions degrade to a spoken error on devices without them. -->
     <uses-feature android:name="android.hardware.telephony" android:required="false" />
     <uses-feature android:name="android.hardware.location.gps" android:required="false" />
+    <!-- Order scan by camera (printed bills, another phone's screen); sharing a screenshot needs none. -->
+    <uses-feature android:name="android.hardware.camera.any" android:required="false" />
 
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
@@ -33,6 +35,8 @@
     <uses-permission android:name="android.permission.WAKE_LOCK" />
     <!-- Crash detection must keep running with the screen locked; the setup card asks for the exemption. -->
     <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
+    <!-- Order scan: asked only when the rider taps Camera. -->
+    <uses-permission android:name="android.permission.CAMERA" />
 
     <!-- On-device text-to-speech (safety alerts without internet) needs to see the TTS engine. -->
     <queries>
@@ -57,6 +61,22 @@
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+
+        <!-- "Share → Pillion: scan order" from the delivery app: reads the screenshot, then opens
+             the ride screen. No window; never kept in the sharing app's task or in recents. -->
+        <activity
+            android:name=".ShareOrderActivity"
+            android:excludeFromRecents="true"
+            android:exported="true"
+            android:label="@string/share_target_label"
+            android:noHistory="true"
+            android:theme="@style/Theme.Pillion.Invisible">
+            <intent-filter>
+                <action android:name="android.intent.action.SEND" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="image/*" />
             </intent-filter>
         </activity>
 

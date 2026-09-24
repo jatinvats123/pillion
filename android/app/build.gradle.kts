@@ -41,6 +41,8 @@ android {
         }
         release {
             buildConfigField("String", "TEST_CUSTOMER_PHONE", "\"\"")
+            // Phones only: the emulator ABIs (x86, x86_64) stay in debug builds.
+            ndk { abiFilters += listOf("arm64-v8a", "armeabi-v7a") }
             isMinifyEnabled = false
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
         }
@@ -64,6 +66,10 @@ dependencies {
     implementation(libs.agora.rtc.ains)
     implementation(libs.agora.rtc.aiaec)
     implementation(libs.agora.rtm.lite)
+    implementation(libs.mlkit.text.devanagari)
+    implementation(libs.androidx.camera.camera2)
+    implementation(libs.androidx.camera.lifecycle)
+    implementation(libs.androidx.camera.view)
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.lifecycle.runtime.compose)
     implementation(libs.androidx.lifecycle.viewmodel.compose)

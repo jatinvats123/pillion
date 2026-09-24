@@ -1,5 +1,6 @@
 package app.pillion.data
 
+import android.location.Location
 import app.pillion.BuildConfig
 import java.io.IOException
 import java.net.HttpURLConnection
@@ -77,14 +78,26 @@ class BackendApi(
         post("/ride/say", JSONObject().put("text", text).put("interrupt", interrupt), rideToken, connectTimeoutMs = 2_000, readTimeoutMs = 3_000)
     }
 
+    /**
+     * Where a scanned drop address is on the map: `{ status: found | approximate | ambiguous |
+     * not_found, lat, lng, area }`. Needs no ride (riders scan before starting); [near] is the
+     * rider's position, if known, since deliveries are local.
+     */
+    suspend fun geocode(address: String, area: String, near: Location?): JSONObject {
+        val body = JSONObject().put("address", address).put("area", area)
+        near?.let { body.put("near", JSONObject().put("lat", it.latitude).put("lng", it.longitude)) }
+        return post("/order/geocode", body, base = reachableBaseUrl(), readTimeoutMs = 15_000)
+    }
+
     private suspend fun post(
         path: String,
         body: JSONObject,
         rideToken: String? = null,
         connectTimeoutMs: Int = 10_000,
         readTimeoutMs: Int = 30_000,
+        base: String = baseUrl,
     ): JSONObject = withContext(Dispatchers.IO) {
-        val connection = (URL(baseUrl + path).openConnection() as HttpURLConnection).apply {
+        val connection = (URL(base + path).openConnection() as HttpURLConnection).apply {
             requestMethod = "POST"
             connectTimeout = connectTimeoutMs
             readTimeout = readTimeoutMs

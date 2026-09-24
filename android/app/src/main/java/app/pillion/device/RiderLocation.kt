@@ -53,6 +53,17 @@ class RiderLocation(context: Context) {
             .maxByOrNull { it.elapsedRealtimeNanos }
     }
 
+    /**
+     * Speed from a GPS fix of the last 10 s (a ride polls GPS every second), or null when there is
+     * none: then nothing says the rider is moving.
+     */
+    @SuppressLint("MissingPermission")
+    fun recentSpeedKmh(): Float? {
+        if (!hasPermission()) return null
+        val fix = runCatching { manager.getLastKnownLocation(LocationManager.GPS_PROVIDER) }.getOrNull() ?: return null
+        return fix.takeIf { ageMs(it) <= SPEED_FIX_MAX_AGE_MS && it.hasSpeed() }?.let { it.speed * 3.6f }
+    }
+
     fun ageMs(location: Location): Long = (SystemClock.elapsedRealtimeNanos() - location.elapsedRealtimeNanos) / 1_000_000
 
     private fun enabledProviders(): List<String> = buildList {
@@ -80,5 +91,6 @@ class RiderLocation(context: Context) {
         const val RECENT_MS = 20_000L
         const val FRESH_TIMEOUT_MS = 4_000L
         const val STALE_OK_MS = 5 * 60_000L
+        const val SPEED_FIX_MAX_AGE_MS = 10_000L
     }
 }

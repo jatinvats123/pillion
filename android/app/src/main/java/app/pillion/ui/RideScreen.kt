@@ -10,8 +10,10 @@ import android.os.PowerManager
 import android.provider.Settings
 import android.speech.tts.TextToSpeech
 import android.widget.Toast
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.LocalActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
@@ -73,6 +75,9 @@ import app.pillion.BuildConfig
 import app.pillion.R
 import app.pillion.data.Order
 import app.pillion.device.RidePermission
+import app.pillion.order.ScanSource
+import app.pillion.order.ScanState
+import app.pillion.order.loadOrderImage
 import app.pillion.pillion
 import app.pillion.safety.SafetyState
 import app.pillion.voice.Speaker
@@ -85,9 +90,12 @@ private enum class SetupIssue { NoContacts, Sms, Location, Notifications, FullSc
 
 /** Screen entry point: owns the permission flows and wires the ViewModel. */
 @Composable
-fun RideRoute(onOpenSafety: () -> Unit, viewModel: RideViewModel = viewModel()) {
+fun RideRoute(onOpenSafety: () -> Unit, onOpenCamera: () -> Unit, viewModel: RideViewModel = viewModel()) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
-    val testOrder by viewModel.testOrder.collectAsStateWithLifecycle()
+    val order by viewModel.order.collectAsStateWithLifecycle()
+    val scanState by viewModel.scanState.collectAsStateWithLifecycle()
+    val locatingDrop by viewModel.locatingDrop.collectAsStateWithLifecycle()
+    val stopToScan by viewModel.stopToScan.collectAsStateWithLifecycle()
     val safetyState by viewModel.safetyState.collectAsStateWithLifecycle()
     val contactCount by viewModel.emergencyContactCount.collectAsStateWithLifecycle()
     val gpsAvailable by viewModel.gpsAvailable.collectAsStateWithLifecycle()
@@ -95,6 +103,18 @@ fun RideRoute(onOpenSafety: () -> Unit, viewModel: RideViewModel = viewModel()) 
     val activity = LocalActivity.current
     var micPrompt by rememberSaveable { mutableStateOf(MicPrompt.None) }
     var setupDismissed by rememberSaveable { mutableStateOf(false) }
+    var cameraRefused by rememberSaveable { mutableStateOf(false) }
+
+    // Order scan: a screenshot from the system photo picker (no storage permission), or the camera.
+    val appContext = context.applicationContext
+    val pickScreenshot = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
+        if (uri != null) viewModel.scanImage(ScanSource.Gallery) { loadOrderImage(appContext, uri) }
+    }
+    val cameraPermissionLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+        cameraRefused = !granted
+        if (granted) onOpenCamera()
+    }
+    BackHandler(enabled = scanState != ScanState.Idle, onBack = viewModel::dismissScan)
 
     // Optional extras are only asked once the mic is granted; whatever the answer, the ride starts.
     val optionalPermissionsLauncher = rememberLauncherForActivityResult(
@@ -170,14 +190,72 @@ fun RideRoute(onOpenSafety: () -> Unit, viewModel: RideViewModel = viewModel()) 
             }
         },
         onDismissSetup = { setupDismissed = true },
-        testOrder = testOrder.takeIf { BuildConfig.DEBUG },
+        orderCard = {
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                if (stopToScan) {
+                    MessageCard(
+                        title = stringResource(R.string.order_stop_to_scan_title),
+                        body = stringResource(R.string.order_stop_to_scan_body),
+                        onDismiss = viewModel::dismissStopToScan,
+                        isError = true,
+                    )
+                }
+                if (cameraRefused) {
+                    MessageCard(
+                        title = stringResource(R.string.camera_denied_title),
+                        body = stringResource(R.string.camera_denied_body),
+                        actionLabel = stringResource(R.string.allow),
+                        onAction = {
+                            // No rationale after a refusal means "Don't ask again": only Settings can fix it.
+                            if (activity?.shouldShowRequestPermissionRationale(Manifest.permission.CAMERA) == true) {
+                                cameraPermissionLauncher.launch(Manifest.permission.CAMERA)
+                            } else {
+                                context.openAppSettings()
+                            }
+                        },
+                        onDismiss = { cameraRefused = false },
+                        isError = true,
+                    )
+                }
+                ActiveOrderCard(
+                    order = order,
+                    locatingDrop = locatingDrop,
+                    onScanScreenshot = {
+                        if (viewModel.scanAllowed()) pickScreenshot.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
+                    },
+                    onScanCamera = {
+                        if (viewModel.scanAllowed()) {
+                            if (context.granted(Manifest.permission.CAMERA)) onOpenCamera() else cameraPermissionLauncher.launch(Manifest.permission.CAMERA)
+                        }
+                    },
+                    onUseDemo = viewModel::useDemoOrder,
+                )
+            }
+        },
+        scanPanel = if (scanState == ScanState.Idle) {
+            null
+        } else {
+            { modifier ->
+                OrderScanPanel(
+                    state = scanState,
+                    onConfirm = viewModel::confirmOrder,
+                    onTypeIn = viewModel::enterOrderManually,
+                    onDismiss = viewModel::dismissScan,
+                    modifier = modifier,
+                )
+            }
+        },
+        testOrder = order.takeIf { BuildConfig.DEBUG && it.isDemo },
         onSaveTestPhone = viewModel::setTestCustomerPhone,
         debug = if (BuildConfig.DEBUG) {
             {
-                DebugSafetyCard(
-                    viewModel = viewModel,
-                    rideActive = state.rideActive,
-                )
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    DebugSafetyCard(
+                        viewModel = viewModel,
+                        rideActive = state.rideActive,
+                    )
+                    DebugScanCard(onScan = viewModel::scanImage)
+                }
             }
         } else {
             null
@@ -205,6 +283,9 @@ private fun RideScreen(
     onDismissPermission: () -> Unit,
     onFixSetup: (SetupIssue) -> Unit,
     onDismissSetup: () -> Unit,
+    orderCard: @Composable () -> Unit,
+    /** Set while an order is read or checked: it takes the transcript's place. */
+    scanPanel: (@Composable (Modifier) -> Unit)?,
     testOrder: Order?,
     onSaveTestPhone: (String) -> Unit,
     debug: (@Composable () -> Unit)?,
@@ -287,10 +368,15 @@ private fun RideScreen(
                     }
                 }
                 if (setupIssues.isNotEmpty()) add { SetupCard(setupIssues, onFixSetup, onDismissSetup) }
+                add(orderCard)
                 if (testOrder != null && !state.rideActive) add { TestOrderCard(testOrder, onSaveTestPhone) }
                 debug?.let { add(it) }
             }
-            Transcript(cards = cards, lines = state.transcript, modifier = Modifier.weight(1f))
+            if (scanPanel != null) {
+                scanPanel(Modifier.weight(1f))
+            } else {
+                Transcript(cards = cards, lines = state.transcript, modifier = Modifier.weight(1f))
+            }
 
             Row(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
                 SosButton(enabled = safetyState == SafetyState.Idle, onClick = onSos)

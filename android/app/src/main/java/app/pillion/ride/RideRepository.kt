@@ -3,12 +3,16 @@ package app.pillion.ride
 import android.content.Context
 import android.util.Log
 import app.pillion.data.BackendApi
+import app.pillion.data.DropLocation
+import app.pillion.data.Order
 import app.pillion.data.RideCredentials
-import app.pillion.data.SeededOrderSource
 import app.pillion.device.DeviceActions
+import app.pillion.device.RiderLocation
 import app.pillion.device.RidePermission
 import app.pillion.device.phoneCallActive
 import app.pillion.pillion
+import app.pillion.safety.RiderLanguage
+import app.pillion.safety.SafetyPhrases
 import app.pillion.safety.SafetyVoice
 import app.pillion.voice.AgentState
 import app.pillion.voice.ConnectionState
@@ -36,7 +40,8 @@ class RideRepository(
     private val appContext = context.applicationContext
     val safety = appContext.pillion.safety
     val voice = VoiceSession(appContext)
-    val orders = SeededOrderSource(appContext)
+    val orders = appContext.pillion.orders
+    private val location = RiderLocation(appContext)
     private val earnings = appContext.pillion.db
     private val actions = DeviceActions(appContext, orders, earnings, safety) { customer, delivered ->
         voice.showActionLine(
@@ -51,6 +56,10 @@ class RideRepository(
     )
     /** An action failed because the rider hasn't granted this permission. */
     val permissionNeeded: SharedFlow<RidePermission> = _permissionNeeded.asSharedFlow()
+
+    /** The rider's latest final transcript: what Pillion says outside the LLM follows its language. */
+    @Volatile
+    private var lastRiderText: String? = null
 
     suspend fun start(): RideCredentials {
         val ride = api.startAgent()
@@ -95,6 +104,7 @@ class RideRepository(
         launch {
             voice.riderTurns.collect { turn ->
                 safety.onRiderTurn(turn.text)
+                lastRiderText = turn.text
                 launch {
                     runCatching { api.postTurn(ride.rideToken, turn.turnId, turn.text) }
                         .onFailure { Log.w(TAG, "Turn not posted", it) }
@@ -120,6 +130,50 @@ class RideRepository(
             .onFailure { Log.w(TAG, "Device result for ${request.optString("action")} not delivered", it) }
     }
 
+    /**
+     * Looks up a scanned order's drop on the map (through the backend's maps provider). Unchecked
+     * if the server can't be reached: it then looks the address up when ETA is asked. Returns the
+     * drop and the locality to call it by.
+     */
+    suspend fun locateDrop(order: Order): Pair<DropLocation, String> {
+        if (order.dropAddress.isBlank()) return DropLocation.NotFound to order.dropArea
+        val near = location.newestKnown()?.takeIf { location.ageMs(it) <= NEAR_MAX_AGE_MS }
+        val result = try {
+            api.geocode(order.dropAddress, order.dropArea, near)
+        } catch (error: CancellationException) {
+            throw error
+        } catch (error: Exception) {
+            Log.w(TAG, "Drop not looked up; the server will when ETA is asked", error)
+            return DropLocation.Unchecked to order.dropArea
+        }
+        val drop = when (result.optString("status")) {
+            "found", "approximate" -> DropLocation.Found(
+                result.getDouble("lat"), result.getDouble("lng"), approximate = result.optString("status") == "approximate",
+            )
+            else -> DropLocation.NotFound
+        }
+        val area = order.dropArea.ifBlank { result.optString("area").takeIf { drop is DropLocation.Found && it != "null" }.orEmpty() }
+        return drop to area
+    }
+
+    /**
+     * Pillion says [line] (Hindi or English, by the rider's last words) through Agora's speak API,
+     * after whatever it is saying. False if the voice isn't connected or the call failed.
+     */
+    suspend fun sayToRider(ride: RideCredentials, line: (hindi: Boolean) -> String): Boolean {
+        if (voice.connection.value != ConnectionState.Connected || !voice.agentPresent.value) return false
+        val english = lastRiderText?.let(SafetyPhrases::languageOf) == RiderLanguage.English
+        return try {
+            api.say(ride.rideToken, line(!english), interrupt = false)
+            true
+        } catch (error: CancellationException) {
+            throw error
+        } catch (error: Exception) {
+            Log.w(TAG, "Agora say failed", error)
+            false
+        }
+    }
+
     /** Leaves the channel, then stops the agent. The agent also self-stops 30 s after we leave. */
     suspend fun end(agentId: String) = withContext(NonCancellable) {
         voice.leave()
@@ -132,11 +186,15 @@ class RideRepository(
         earnings.addLiveTrip(startedAt, endedAt, order.dropArea, order.payoutRupees)
     }
 
+    /** km/h from a GPS fix of the last 10 s, or null. */
+    fun riderSpeedKmh(): Float? = location.recentSpeedKmh()
+
     /** Debug only: mirror a per-turn latency line into the backend log. */
     suspend fun reportLatency(line: String) = api.reportLatency(line)
 
     private companion object {
         const val TAG = "RideRepository"
         const val SAY_START_TIMEOUT_MS = 3_000L
+        const val NEAR_MAX_AGE_MS = 30 * 60_000L
     }
 }
