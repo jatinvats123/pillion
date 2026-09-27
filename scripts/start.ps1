@@ -139,8 +139,12 @@ function Start-Tunnel {
         Report $false 'cloudflared' 'not installed: winget install Cloudflare.cloudflared'
         return $null
     }
-    $log = Join-Path $env:TEMP "pillion-tunnel-$Port.log"
-    Remove-Item -LiteralPath $log -ErrorAction SilentlyContinue
+    # A dead tunnel's cloudflared (e.g. after the laptop slept) keeps running and keeps its log open,
+    # so the old URL would be read back as the new one: stop it, and use a fresh log file each time.
+    Get-CimInstance Win32_Process -Filter "Name='cloudflared.exe'" -ErrorAction SilentlyContinue |
+        Where-Object { $_.CommandLine -match "--url http://localhost:$Port" } |
+        ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }
+    $log = Join-Path $env:TEMP "pillion-tunnel-$Port-$(Get-Date -Format 'yyyyMMdd-HHmmss').log"
     # cloudflared writes the log itself (--logfile, opened for shared reading); the window shows it too.
     $command = "`$Host.UI.RawUI.WindowTitle = 'Pillion tunnel'; & '$exe' tunnel --no-autoupdate --protocol http2 --logfile '$log' --url http://localhost:$Port"
     Start-Process -FilePath 'powershell.exe' -ArgumentList '-NoExit', '-Command', $command -WindowStyle Minimized | Out-Null
@@ -187,7 +191,7 @@ if ($tunnelState -eq 'down') {
         $envChanged = $true
         Report $true 'New tunnel; PUBLIC_BASE_URL updated in backend/.env' $newUrl
     } else {
-        Report $false 'New tunnel' "no URL from cloudflared; see $env:TEMP\pillion-tunnel-$Port.log"
+        Report $false 'New tunnel' "no URL from cloudflared; see the newest $env:TEMP\pillion-tunnel-$Port-*.log"
     }
 } else {
     Info "keeping the tunnel in backend/.env: $tunnel"
