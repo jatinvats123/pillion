@@ -23,13 +23,16 @@ export function createRide({ channel, uid }) {
     token: randomBytes(24).toString('base64url'),
     channel,
     uid,
-    agentId: null,
+    agentId: null, // the running agent; null while Live Guardian has it stopped for family
+    agentIds: new Set(), // every agent this ride has had (the app stops the ride by the first)
     session: null,
     startedAt: Date.now(),
     waiting: new Map(), // phone request id → { resolve, reject, timer }
     prefetched: new Map(), // Jev prefetch: key → { at, promise }
     turn: null, // latest final rider transcript (+ Jev's reading of it)
     pendingAction: null, // SMS or call waiting for the rider's "yes"
+    familyPresent: false, // Live Guardian: family is in the channel
+    handoff: Promise.resolve(), // agent stop/restart steps, one after another
   };
   rides.set(ride.token, ride);
   return ride;
@@ -38,7 +41,7 @@ export function createRide({ channel, uid }) {
 export const rideForToken = (token) => (token ? rides.get(token) : undefined);
 
 export function rideForAgent(agentId) {
-  for (const ride of rides.values()) if (ride.agentId === agentId) return ride;
+  for (const ride of rides.values()) if (ride.agentIds.has(agentId)) return ride;
   return undefined;
 }
 

@@ -1,7 +1,21 @@
+import { readFileSync } from 'node:fs';
 import express from 'express';
 import { config, configWarnings, mapsConfigured, validateConfig } from './config.js';
 import { geocodeAddress, MapsError } from './maps/index.js';
-import { activeAgentCount, startRide, stopAllRides, stopRide } from './agora.js';
+import { activeAgentCount, familyPresence, startRide, stopAllRides, stopRide } from './agora.js';
+import {
+  guardianEnabled,
+  joinCredentials,
+  linkFor,
+  rateLimiter,
+  registerLink,
+  rideHasLinks,
+  riderIsOk,
+  shortId,
+  statusOf,
+  touchLinks,
+  updateLocation,
+} from './guardian.js';
 import { jevEnabled } from './jev.js';
 import { answerFromPhone, rideForToken } from './rides.js';
 import { onRiderTurn, runTool } from './tools.js';
@@ -27,6 +41,7 @@ app.get('/health', (_req, res) => {
     // Which tunnel this process was started with (.env changes need a restart); scripts/start.ps1 compares it.
     tunnel: config.publicBaseUrl ? new URL(config.publicBaseUrl).host : null,
     jev: jevEnabled(),
+    guardian: guardianEnabled(),
     maps: mapsConfigured() ? config.maps.provider : false,
     activeAgents: activeAgentCount(),
   });
@@ -154,6 +169,100 @@ app.post('/order/geocode', localOnly, async (req, res) => {
     console.warn(`[geocode] failed: ${error.message}`);
     res.status(error instanceof MapsError ? 424 : 500).json({ error: code });
   }
+});
+
+// --- Live Guardian (GUARDIAN_ENABLED): see guardian.js. Nothing here logs names, places or numbers.
+
+function guardianOnly(_req, res, next) {
+  return guardianEnabled() ? next() : res.status(404).json({ error: 'guardian_off' });
+}
+
+// The phone put <base>/g/<token> in an SOS SMS (it made the token, so the SMS didn't wait for us).
+app.post(
+  '/ride/guardian/link',
+  guardianOnly,
+  withRide((ride, req, res) => {
+    const error = registerLink(ride, { token: req.body?.token, name: req.body?.name });
+    res.status(error ? 400 : 200).json(error ? { error } : { ok: true });
+  }),
+);
+
+// Every ~5 s while a link is live: the rider's fix (or no fix: "still here"). `live: false` = stop.
+app.post(
+  '/ride/guardian/location',
+  guardianOnly,
+  withRide((ride, req, res) => {
+    const lat = Number(req.body?.lat);
+    const lng = Number(req.body?.lng);
+    if (Number.isFinite(lat) && Number.isFinite(lng)) {
+      updateLocation(ride, { lat, lng, accuracyM: Number(req.body?.accuracyM), ageMs: Number(req.body?.ageMs) });
+    } else {
+      touchLinks(ride);
+    }
+    res.json({ live: rideHasLinks(ride) });
+  }),
+);
+
+// The rider tapped I'M OK NOW: pages say so, location sharing stops.
+app.post(
+  '/ride/guardian/ok',
+  guardianOnly,
+  withRide((ride, _req, res) => {
+    riderIsOk(ride);
+    res.json({ ok: true });
+  }),
+);
+
+// The phone saw family join (any) or leave (all) the RTC channel: the agent steps aside / comes back.
+app.post(
+  '/ride/guardian/presence',
+  guardianOnly,
+  withRide((ride, req, res) => {
+    const present = req.body?.present === true;
+    console.log(`[guardian] ride=${ride.channel.slice(-6)} family ${present ? 'joined' : 'left'}`);
+    familyPresence(ride, present);
+    res.json({ ok: true });
+  }),
+);
+
+// Public: whoever has the link. Unknown and expired tokens look the same.
+const pageLimit = rateLimiter({ max: 60, windowMs: 60_000 });
+const pageHtml = readFileSync(new URL('../public/guardian.html', import.meta.url), 'utf8');
+const expiredHtml = readFileSync(new URL('../public/expired.html', import.meta.url), 'utf8');
+
+function publicPage(req, res, next) {
+  res.set({
+    'Cache-Control': 'no-store',
+    // Map tiles and the CDN see our origin at most, never the token in the path.
+    'Referrer-Policy': 'strict-origin',
+    'X-Robots-Tag': 'noindex, nofollow',
+    'X-Content-Type-Options': 'nosniff',
+    'X-Frame-Options': 'DENY',
+  });
+  const ip = req.get('cf-connecting-ip') || req.socket.remoteAddress;
+  if (!pageLimit(ip)) return res.status(429).json({ error: 'slow_down' });
+  return next();
+}
+
+const liveLink = (req) => (guardianEnabled() ? linkFor(req.params.token) : undefined);
+
+app.get('/g/:token', publicPage, (req, res) => {
+  res.status(liveLink(req) ? 200 : 410).type('html').send(liveLink(req) ? pageHtml : expiredHtml);
+});
+
+app.get('/g/:token/status', publicPage, (req, res) => {
+  const link = liveLink(req);
+  if (!link) return res.status(410).json({ error: 'expired' });
+  return res.json(statusOf(link, Boolean(rideForToken(link.rideToken))));
+});
+
+app.post('/g/:token/join', publicPage, (req, res) => {
+  const link = liveLink(req);
+  if (!link) return res.status(410).json({ error: 'expired' });
+  const credentials = joinCredentials(link);
+  if (!credentials) return res.status(429).json({ error: 'slow_down' });
+  console.log(`[guardian] link ${shortId(link.token)}: family joining`);
+  return res.json(credentials);
 });
 
 // Testing without speaking: sends text into the ride's LLM as if the rider had said it.

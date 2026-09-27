@@ -12,8 +12,17 @@ import {
   generateConvoAIToken,
 } from 'agora-agents';
 import { config } from './config.js';
-import { FAILURE_MESSAGE, FILLER_PHRASES, FILLER_PROMPT, GREETING, SYSTEM_PROMPT } from './prompt.js';
-import { createRide, endRide, rideForAgent } from './rides.js';
+import {
+  FAILURE_MESSAGE,
+  FAMILY_JOINED,
+  FILLER_PHRASES,
+  FILLER_PROMPT,
+  GREETING,
+  RESUMED_CONTEXT,
+  SYSTEM_PROMPT,
+  WELCOME_BACK,
+} from './prompt.js';
+import { createRide, endRide, rideForAgent, rideForToken } from './rides.js';
 import { toolDefinitions } from './tools.js';
 
 // Created lazily so config validation can report problems before the SDK does.
@@ -30,7 +39,7 @@ const activeAgents = new Set();
 
 export const activeAgentCount = () => activeAgents.size;
 
-function buildAgent(ride) {
+function buildAgent(ride, resumed) {
   const agent = new Agent({
     client: agoraClient(),
     turnDetection: {
@@ -74,7 +83,7 @@ function buildAgent(ride) {
       },
     },
   })
-    .withLlm(buildLlm(ride))
+    .withLlm(buildLlm(ride, resumed))
     .withTools(true);
 
   if (config.voiceStack === 'managed') {
@@ -95,10 +104,12 @@ function buildAgent(ride) {
     );
 }
 
-function buildLlm(ride) {
+function buildLlm(ride, resumed) {
+  const systemMessages = [{ role: 'system', content: SYSTEM_PROMPT }];
+  if (resumed) systemMessages.push({ role: 'system', content: RESUMED_CONTEXT });
   const common = {
-    systemMessages: [{ role: 'system', content: SYSTEM_PROMPT }],
-    greetingMessage: GREETING,
+    systemMessages,
+    greetingMessage: resumed ? WELCOME_BACK : GREETING,
     failureMessage: FAILURE_MESSAGE,
     maxHistory: 12,
     tools: toolDefinitions(),
@@ -144,25 +155,13 @@ export async function startRide() {
   });
 
   const ride = createRide({ channel, uid });
-  const session = buildAgent(ride).createSession({
-    name: channel,
-    channel,
-    agentUid: config.agora.agentUid,
-    remoteUids: [String(uid)],
-    idleTimeout: 30,
-    expiresIn: config.tokenExpirySeconds,
-  });
-
   let agentId;
   try {
-    agentId = await session.start();
+    agentId = await startAgent(ride, false);
   } catch (error) {
     endRide(ride);
     throw error;
   }
-  ride.agentId = agentId;
-  ride.session = session;
-  activeAgents.add(agentId);
 
   return {
     appId: config.agora.appId,
@@ -173,14 +172,90 @@ export async function startRide() {
     agentId,
     // Authenticates the app's own calls (transcripts, device results) for this ride.
     rideToken: ride.token,
+    // Live Guardian: base of the SOS link (<base>/g/<token>); null = feature off, no link.
+    guardianBaseUrl: config.guardian.enabled ? config.publicBaseUrl : null,
   };
 }
 
-/** Stops an agent by id. Already-stopped agents count as success. */
-export async function stopRide(agentId) {
+/** Starts an agent in the ride's channel that only listens to the rider. Returns its id. */
+async function startAgent(ride, resumed) {
+  const session = buildAgent(ride, resumed).createSession({
+    name: `${ride.channel}${resumed ? `-r${Date.now() % 100_000}` : ''}`,
+    channel: ride.channel,
+    agentUid: config.agora.agentUid,
+    remoteUids: [String(ride.uid)],
+    idleTimeout: 30,
+    expiresIn: Math.max(60, config.tokenExpirySeconds - Math.floor((Date.now() - ride.startedAt) / 1000)),
+  });
+  const agentId = await session.start();
+  ride.agentId = agentId;
+  ride.agentIds.add(agentId);
+  ride.session = session;
+  activeAgents.add(agentId);
+  return agentId;
+}
+
+const FAMILY_LINE_MS = 4000; // the family line: Sarvam's first audio ~1–1.5 s + ~2 s of speech
+
+/**
+ * Live Guardian handoff, reported by the rider's phone (it sees family uids join and leave the
+ * RTC channel). ConvoAI can't pause an agent (update only takes token and llm), so the agent says
+ * one line and is stopped while family is on; a fresh one starts in the same channel when the
+ * last of them leaves. Steps run one after another; each checks the latest presence first.
+ */
+export function familyPresence(ride, present) {
+  if (ride.familyPresent === present) return;
+  ride.familyPresent = present;
+  ride.handoff = ride.handoff
+    .then(() => (present ? pauseForFamily(ride) : resumeAfterFamily(ride)))
+    .catch((error) => console.warn(`[guardian] ride=${ride.channel.slice(-6)} handoff failed: ${describeError(error)}`));
+}
+
+async function pauseForFamily(ride) {
+  if (!ride.familyPresent || !ride.session) return;
+  try {
+    await ride.session.say(FAMILY_JOINED, { priority: 'INTERRUPT', interruptable: false });
+  } catch (error) {
+    console.warn(`[guardian] family line not said: ${describeError(error)}`);
+  }
+  await new Promise((resolve) => setTimeout(resolve, FAMILY_LINE_MS));
+  if (!ride.familyPresent || !ride.session) return; // they left while it spoke: keep the agent
+  const agentId = ride.agentId;
+  ride.session = null;
+  ride.agentId = null;
   await agoraClient().stopAgent(agentId);
   activeAgents.delete(agentId);
-  endRide(rideForAgent(agentId));
+  console.log(`[guardian] ride=${ride.channel.slice(-6)} family on the line: agent stopped`);
+}
+
+async function resumeAfterFamily(ride) {
+  if (ride.familyPresent || ride.session || !rideForToken(ride.token)) return;
+  const startedAt = Date.now();
+  const agentId = await startAgent(ride, true);
+  if (!rideForToken(ride.token)) {
+    // The ride ended while the agent started.
+    await agoraClient().stopAgent(agentId).catch(() => {});
+    activeAgents.delete(agentId);
+    return;
+  }
+  console.log(`[guardian] ride=${ride.channel.slice(-6)} family left: agent back in ${Date.now() - startedAt} ms`);
+}
+
+function describeError(error) {
+  return error?.statusCode ? `HTTP ${error.statusCode}` : String(error?.message ?? error).slice(0, 120);
+}
+
+/**
+ * Stops a ride by any agent id it has had (the app knows the first; Live Guardian may have
+ * replaced it). Already-stopped agents count as success.
+ */
+export async function stopRide(agentId) {
+  const ride = rideForAgent(agentId);
+  endRide(ride); // first, so a handoff in flight doesn't start a new agent
+  const current = ride ? ride.agentId : agentId;
+  if (!current) return; // paused for family: no agent running
+  await agoraClient().stopAgent(current);
+  activeAgents.delete(current);
 }
 
 export async function stopAllRides() {

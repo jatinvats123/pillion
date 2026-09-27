@@ -36,6 +36,15 @@ class SosMessagesTest {
     }
 
     @Test
+    fun `live link fits three GSM-7 parts with a long tunnel host`() {
+        val link = "https://companion-docs-bloggers-reload.trycloudflare.com/g/Ab3_x-9QzLmN0pQrStUvWx"
+        val message = SosMessages.first("Jatin Kumar Vats", SosMessages.Reason.Crash, at, fix.copy(ageMs = 7 * 60_000), link)
+        assertTrue(message.contains("Please call now. Hear and talk to Jatin Kumar Vats live: $link Jatin"))
+        assertTrue("GSM-7 only: $message", message.all { it in GSM7 })
+        assertTrue("${message.length} chars: $message", message.length <= 3 * 153)
+    }
+
+    @Test
     fun `old or missing fixes say so`() {
         assertTrue(SosMessages.location(fix.copy(ageMs = 2 * 60_000)).endsWith("(accuracy 15 m, from 2 min ago)"))
         assertTrue(SosMessages.location(fix.copy(ageMs = 3 * 3_600_000L)).endsWith("from 3 h ago)"))

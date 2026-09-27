@@ -18,13 +18,15 @@ object SosMessages {
     /** Why the SOS went: a detected crash, or the rider asked for it. */
     enum class Reason { Crash, RiderAsked }
 
-    fun first(riderName: String, reason: Reason, atMs: Long, fix: SosFix?): String {
+    /** [liveLink]: Live Guardian page (hear, talk to and follow the rider), when the ride has one. */
+    fun first(riderName: String, reason: Reason, atMs: Long, fix: SosFix?, liveLink: String? = null): String {
         val name = displayName(riderName)
         val (what, hindi) = when (reason) {
             Reason.Crash -> "may have had a road accident" to "$name ka accident ho sakta hai, turant call karein."
             Reason.RiderAsked -> "asked for help" to "$name ko madad chahiye, turant call karein."
         }
-        return "PILLION SOS: $name $what at ${clock(atMs)}. Location: ${location(fix)}. Please call now. $hindi"
+        val live = liveLink?.let { " Hear and talk to $name live: $it" }.orEmpty()
+        return "PILLION SOS: $name $what at ${clock(atMs)}. Location: ${location(fix)}. Please call now.$live $hindi"
     }
 
     fun followUp(riderName: String, atMs: Long, fix: SosFix?): String =

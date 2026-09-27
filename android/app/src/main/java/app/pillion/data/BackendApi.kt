@@ -20,6 +20,8 @@ data class RideCredentials(
     val agentId: String,
     /** Authenticates this ride's own calls to the backend (transcripts, device results). */
     val rideToken: String,
+    /** Live Guardian: base of the SOS link (`<base>/g/<token>`); null when the feature is off. */
+    val guardianBaseUrl: String? = null,
 )
 
 class BackendException(message: String) : IOException(message)
@@ -49,6 +51,7 @@ class BackendApi(
             agentUid = json.getInt("agentUid"),
             agentId = json.getString("agentId"),
             rideToken = json.getString("rideToken"),
+            guardianBaseUrl = json.optString("guardianBaseUrl").takeIf { it.startsWith("https://") },
         )
     }
 
@@ -76,6 +79,31 @@ class BackendApi(
      */
     suspend fun say(rideToken: String, text: String, interrupt: Boolean) {
         post("/ride/say", JSONObject().put("text", text).put("interrupt", interrupt), rideToken, connectTimeoutMs = 2_000, readTimeoutMs = 3_000)
+    }
+
+    /** Live Guardian: this ride's SOS SMS carries `<base>/g/[token]` (made on the phone). */
+    suspend fun registerGuardianLink(rideToken: String, token: String, riderName: String) {
+        post("/ride/guardian/link", JSONObject().put("token", token).put("name", riderName), rideToken, connectTimeoutMs = 3_000, readTimeoutMs = 5_000)
+    }
+
+    /** The rider's latest fix for the family's page (null: no fix, still here). False once no link is live. */
+    suspend fun postGuardianLocation(rideToken: String, fix: Location?, ageMs: Long): Boolean {
+        val body = JSONObject()
+        fix?.let {
+            body.put("lat", it.latitude).put("lng", it.longitude).put("ageMs", ageMs)
+            if (it.hasAccuracy()) body.put("accuracyM", it.accuracy.toDouble())
+        }
+        return post("/ride/guardian/location", body, rideToken, connectTimeoutMs = 3_000, readTimeoutMs = 5_000).optBoolean("live")
+    }
+
+    /** The rider tapped I'M OK NOW: the family's page says so and stops following the rider. */
+    suspend fun guardianRiderOk(rideToken: String) {
+        post("/ride/guardian/ok", JSONObject(), rideToken, connectTimeoutMs = 3_000, readTimeoutMs = 5_000)
+    }
+
+    /** Family joined (any) or left (all) the channel: the backend stops or brings back the agent. */
+    suspend fun guardianPresence(rideToken: String, present: Boolean) {
+        post("/ride/guardian/presence", JSONObject().put("present", present), rideToken, connectTimeoutMs = 3_000, readTimeoutMs = 5_000)
     }
 
     /** English for a Hindi transcript line (Sarvam, via the backend). Display-only, so short timeouts. */

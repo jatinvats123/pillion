@@ -1,6 +1,8 @@
 package app.pillion.ui
 
 import android.Manifest
+import android.content.ClipData
+import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
@@ -577,6 +579,7 @@ private fun rideStatusOf(status: RideStatus, alertOn: Boolean, muted: Boolean, i
     status == RideStatus.Ending -> ShownStatus(R.string.ending_ride, OrbMood.Offline, R.string.orb_offline)
     status == RideStatus.Thinking -> ShownStatus(R.string.status_thinking, OrbMood.Thinking, R.string.orb_thinking)
     status == RideStatus.Speaking -> ShownStatus(R.string.status_speaking, OrbMood.Speaking, R.string.orb_speaking)
+    status == RideStatus.FamilyOnLine -> ShownStatus(R.string.status_family, OrbMood.Listening, R.string.orb_family)
     muted -> ShownStatus(R.string.status_mic_off, OrbMood.Offline, R.string.orb_muted)
     else -> ShownStatus(R.string.status_listening, OrbMood.Listening, R.string.orb_listening)
 }
@@ -766,6 +769,7 @@ private fun ActionChip(line: TranscriptLine, onClick: (() -> Unit)? = null) {
     val (icon, tint, meaning) = when {
         line.text.startsWith("↻") -> Triple(R.drawable.ic_sync, colors.inkSecondary, R.string.action_update)
         line.text.startsWith("☕") -> Triple(R.drawable.ic_bedtime, colors.ink, R.string.action_reminder)
+        line.text.startsWith("👤") -> Triple(R.drawable.ic_call, colors.ink, R.string.action_family)
         line.text.startsWith("⚠") -> Triple(R.drawable.ic_warning, colors.danger, R.string.action_warning)
         line.failed || line.text.startsWith("✗") -> Triple(R.drawable.ic_error, colors.danger, R.string.action_failed)
         else -> Triple(R.drawable.ic_check_circle, colors.success, R.string.action_done)
@@ -782,7 +786,7 @@ private fun ActionChip(line: TranscriptLine, onClick: (() -> Unit)? = null) {
         horizontalArrangement = Arrangement.spacedBy(Space.s),
     ) {
         Icon(painterResource(icon), contentDescription = stringResource(meaning), tint = tint, modifier = Modifier.size(20.dp))
-        // The leading ✓ / ✗ / ⚠ / ↻ / ☕ is shown as the icon instead.
+        // The leading ✓ / ✗ / ⚠ / ↻ / ☕ / 👤 is shown as the icon instead.
         Text(line.text.trimStart { !it.isLetterOrDigit() }, style = MaterialTheme.typography.labelLarge, color = colors.ink, modifier = Modifier.weight(1f, fill = false))
         if (onClick != null) Icon(painterResource(R.drawable.ic_chevron_right), contentDescription = null, tint = colors.ink, modifier = Modifier.size(20.dp))
     }
@@ -1163,6 +1167,20 @@ private fun DebugSafetyCard(viewModel: RideViewModel, rideActive: Boolean) {
             content = Pillion.colors.ink,
             minHeight = 48.dp,
         )
+        val liveLink by viewModel.lastLiveLink.collectAsStateWithLifecycle()
+        liveLink?.let { link ->
+            val copied = stringResource(R.string.debug_live_link_copied)
+            PillButton(
+                text = stringResource(R.string.debug_copy_live_link),
+                onClick = {
+                    context.getSystemService(ClipboardManager::class.java).setPrimaryClip(ClipData.newPlainText("Live link", link))
+                    Toast.makeText(context, copied, Toast.LENGTH_SHORT).show()
+                },
+                container = Pillion.colors.surfaceHigh,
+                content = Pillion.colors.ink,
+                minHeight = 48.dp,
+            )
+        }
         DebugSwitch(stringResource(R.string.debug_record), recording, viewModel.debug::setRecording)
         DebugSwitch(stringResource(R.string.debug_demo), demo, viewModel.debug::setDemoMode)
         DebugSwitch(stringResource(R.string.debug_fatigue), fatigue, viewModel.debug::setFatigueInTwoMinutes)

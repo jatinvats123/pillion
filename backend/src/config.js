@@ -56,6 +56,11 @@ export const config = {
     geoapifyApiKey: env('GEOAPIFY_API_KEY'),
     googleApiKey: env('GOOGLE_MAPS_API_KEY'),
   },
+  // Live Guardian: SOS SMS links where family hears, talks to and locates the rider. Off = no link,
+  // no page, no handoff.
+  guardian: {
+    enabled: env('GUARDIAN_ENABLED', 'false').toLowerCase() === 'true',
+  },
   // Filler words play when the LLM hasn't started answering after this long (in practice: tool calls).
   fillerWaitMs: Number(env('FILLER_WAIT_MS', '1500')),
   port: Number(env('PORT', '3000')),
@@ -98,6 +103,7 @@ export function configWarnings() {
   if (!config.publicBaseUrl) warnings.push('PUBLIC_BASE_URL is not set: rides can\'t start until cloudflared runs (see .env.example)');
   const mapsKey = config.maps.provider === 'google' ? 'GOOGLE_MAPS_API_KEY' : 'GEOAPIFY_API_KEY';
   if (!mapsConfigured()) warnings.push(`${mapsKey} is not set (MAPS_PROVIDER=${config.maps.provider}): ETA and nearby places will fail`);
+  if (config.guardian.enabled && !config.publicBaseUrl) warnings.push('GUARDIAN_ENABLED needs PUBLIC_BASE_URL: SOS SMS go without a live link');
   if (config.jev.enabled && !config.jev.apiKey) warnings.push('JEV_API_KEY is not set: Jev routing is off');
   return warnings;
 }

@@ -1,6 +1,7 @@
 package app.pillion.voice
 
 import android.content.Context
+import android.os.SystemClock
 import android.util.Log
 import app.pillion.BuildConfig
 import app.pillion.data.RideCredentials
@@ -87,6 +88,15 @@ class VoiceSession(context: Context) {
 
     private val _agentPresent = MutableStateFlow(false)
     val agentPresent: StateFlow<Boolean> = _agentPresent.asStateFlow()
+
+    // Live Guardian: anyone else in the ride's channel is family (the backend only issues tokens for
+    // the rider, the agent and family links).
+    private val familyUids = mutableSetOf<Int>()
+    @Volatile
+    private var familySeenAtMs = 0L
+    private val _familyPresent = MutableStateFlow(false)
+    /** Family (Live Guardian) is in the channel: they hear the rider, and Pillion steps aside. */
+    val familyPresent: StateFlow<Boolean> = _familyPresent.asStateFlow()
 
     private val _connection = MutableStateFlow(ConnectionState.Disconnected)
     val connection: StateFlow<ConnectionState> = _connection.asStateFlow()
@@ -217,9 +227,24 @@ class VoiceSession(context: Context) {
         ride = null
         _connection.value = ConnectionState.Disconnected
         _agentPresent.value = false
+        synchronized(familyUids) { familyUids.clear() }
+        _familyPresent.value = false
         _agentState.value = AgentState.Unknown
         _riderLevel.value = 0f
         _agentLevel.value = 0f
+    }
+
+    private fun onFamily(uid: Int, joined: Boolean) {
+        synchronized(familyUids) {
+            if (joined) familyUids.add(uid) else familyUids.remove(uid)
+            familySeenAtMs = SystemClock.elapsedRealtime()
+            _familyPresent.value = familyUids.isNotEmpty()
+        }
+    }
+
+    /** Family left and Pillion didn't come back: the voice is gone, as if the agent had left. */
+    fun reportAgentGone() {
+        if (!_agentPresent.value && !_familyPresent.value) _events.tryEmit(VoiceEvent.AgentLeft)
     }
 
     /** Stops or resumes sending the rider's voice to Pillion; kept across a voice reconnect. */
@@ -291,13 +316,25 @@ class VoiceSession(context: Context) {
         }
 
         override fun onUserJoined(uid: Int, elapsed: Int) {
-            if (uid == ride?.agentUid) _agentPresent.value = true
+            if (uid == ride?.agentUid) {
+                _agentPresent.value = true
+            } else {
+                onFamily(uid, joined = true)
+            }
         }
 
         override fun onUserOffline(uid: Int, reason: Int) {
             if (uid == ride?.agentUid) {
                 _agentPresent.value = false
-                _events.tryEmit(VoiceEvent.AgentLeft)
+                // The backend stops the agent while family is on the line (or just was: its stop can
+                // cross the phone's "family left"); RideRepository waits for the new one instead.
+                if (_familyPresent.value || SystemClock.elapsedRealtime() - familySeenAtMs < FAMILY_GRACE_MS) {
+                    _agentState.value = AgentState.Unknown
+                } else {
+                    _events.tryEmit(VoiceEvent.AgentLeft)
+                }
+            } else {
+                onFamily(uid, joined = false)
             }
         }
 
@@ -524,6 +561,8 @@ class VoiceSession(context: Context) {
         const val JOIN_TIMEOUT_MS = 15_000L
         const val VOLUME_INTERVAL_MS = 100
         const val MAX_LINES = 200
+        /** An agent that leaves this soon after family did was stopped for them, not lost. */
+        const val FAMILY_GRACE_MS = 10_000L
 
         // Agora audio routes where the mic is not next to a loudspeaker.
         val HEADSET_LIKE_ROUTES = setOf(

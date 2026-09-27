@@ -19,13 +19,18 @@ import app.pillion.voice.ConnectionState
 import app.pillion.voice.VoiceSession
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.channels.BufferOverflow
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
+import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asSharedFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -56,6 +61,10 @@ class RideRepository(
     )
     /** An action failed because the rider hasn't granted this permission. */
     val permissionNeeded: SharedFlow<RidePermission> = _permissionNeeded.asSharedFlow()
+
+    private val _lastLiveLink = MutableStateFlow<String?>(null)
+    /** Debug builds: the latest SOS live link, to open it without the SMS. */
+    val lastLiveLink: StateFlow<String?> = _lastLiveLink.asStateFlow()
 
     /** The rider's latest final transcript: what Pillion says outside the LLM follows its language. */
     @Volatile
@@ -95,6 +104,11 @@ class RideRepository(
         wasSpeaking || withTimeoutOrNull(SAY_START_TIMEOUT_MS) { voice.agentState.first { it == AgentState.Speaking } } != null
     }
 
+    /** This ride's Live Guardian, or null when the backend has it off. */
+    fun liveGuardian(ride: RideCredentials): LiveGuardian? = ride.guardianBaseUrl?.let { base ->
+        LiveGuardian(ride, base, api, location) { _lastLiveLink.value = it }
+    }
+
     /**
      * Everything a live ride does besides audio, until cancelled: gives final transcripts to the
      * safety check (on the phone) and the backend (Jev), answers the backend's device requests,
@@ -117,7 +131,33 @@ class RideRepository(
         launch {
             phoneCallActive(appContext).collect { voice.setPhoneCallActive(it) }
         }
+        if (ride.guardianBaseUrl != null) launch { handOverToFamily(ride) }
         awaitCancellation()
+    }
+
+    /**
+     * Live Guardian: family joined or left the channel. The backend has Pillion say so and step
+     * aside, then brings it back; if it isn't back in 20 s the voice counts as lost (Retry).
+     */
+    private suspend fun handOverToFamily(ride: RideCredentials): Nothing = coroutineScope {
+        var present = false
+        var watchdog: Job? = null
+        voice.familyPresent.collect { now ->
+            if (now == present) return@collect
+            present = now
+            voice.showActionLine(if (now) "👤 Family joined" else "👤 Family left", failed = false)
+            launch {
+                runCatching { api.guardianPresence(ride.rideToken, now) }
+                    .onFailure { Log.w(TAG, "Family presence not reported", it) }
+            }
+            watchdog?.cancel()
+            if (!now) {
+                watchdog = launch {
+                    delay(AGENT_BACK_TIMEOUT_MS)
+                    voice.reportAgentGone()
+                }
+            }
+        }
     }
 
     private suspend fun answer(ride: RideCredentials, request: JSONObject) {
@@ -198,6 +238,7 @@ class RideRepository(
     private companion object {
         const val TAG = "RideRepository"
         const val SAY_START_TIMEOUT_MS = 3_000L
+        const val AGENT_BACK_TIMEOUT_MS = 20_000L
         const val NEAR_MAX_AGE_MS = 30 * 60_000L
     }
 }

@@ -15,6 +15,7 @@
     <string name="status_voice_offline">Voice offline</string>
 
     <string name="status_mic_off">Mic off</string>
+    <string name="status_family">Family on the line</string>
     <string name="status_alert">Safety alert</string>
 
     <!-- Ride screen (Phase 5 design) -->
@@ -49,6 +50,7 @@
     <string name="orb_speaking">Pillion is speaking; the orb follows its voice</string>
     <string name="orb_offline">Pillion\'s voice is offline</string>
     <string name="orb_muted">Pillion is muted</string>
+    <string name="orb_family">Your family is on the line and can hear you; Pillion is quiet</string>
     <string name="orb_alert">A safety alert is on</string>
     <string name="setup_body">Fix these so a crash alert and SOS always go out.</string>
     <plurals name="setup_count">
@@ -61,6 +63,7 @@
     <string name="scan_order_button">Scan order</string>
     <string name="subtitle_description">English: %1$s</string>
     <string name="action_reminder">Reminder</string>
+    <string name="action_family">Family line</string>
     <string name="setup_open">open safety setup</string>
     <string name="done">Done</string>
     <string name="mute_label_off">Mute</string>
@@ -197,6 +200,8 @@
     <!-- Debug builds only -->
     <string name="debug_safety_title">DEBUG · Safety tests</string>
     <string name="debug_simulate_crash">Simulate crash (synthetic trace)</string>
+    <string name="debug_copy_live_link">Copy SOS live link</string>
+    <string name="debug_live_link_copied">Live link copied</string>
     <string name="debug_simulate_needs_ride">Start a ride first: the simulated trace goes through the ride\'s detector.</string>
     <string name="debug_record">Record sensors to CSV</string>
     <string name="debug_demo">Demo mode: no speed gate, 2.5 g (next ride)</string>

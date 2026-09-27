@@ -45,7 +45,7 @@ import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
-enum class RideStatus { Idle, Connecting, Listening, Thinking, Speaking, Reconnecting, VoiceOffline, Ending, Ended }
+enum class RideStatus { Idle, Connecting, Listening, Thinking, Speaking, FamilyOnLine, Reconnecting, VoiceOffline, Ending, Ended }
 
 data class RideUiState(
     val status: RideStatus = RideStatus.Idle,
@@ -58,7 +58,7 @@ data class RideUiState(
     val rideActive: Boolean
         get() = status in setOf(
             RideStatus.Connecting, RideStatus.Listening, RideStatus.Thinking,
-            RideStatus.Speaking, RideStatus.Reconnecting, RideStatus.VoiceOffline,
+            RideStatus.Speaking, RideStatus.FamilyOnLine, RideStatus.Reconnecting, RideStatus.VoiceOffline,
         )
 }
 
@@ -134,10 +134,10 @@ class RideViewModel(application: Application) : AndroidViewModel(application) {
     private val subtitlesAsked = HashSet<String>()
 
     val uiState: StateFlow<RideUiState> = combine(
-        phase, voice.connection, voice.agentState, voice.agentPresent, voice.transcript,
-    ) { phase, connection, agentState, agentPresent, transcript ->
+        combine(phase, voice.familyPresent, ::Pair), voice.connection, voice.agentState, voice.agentPresent, voice.transcript,
+    ) { (phase, family), connection, agentState, agentPresent, transcript ->
         RideUiState(
-            status = statusFor(phase, connection, agentState, agentPresent),
+            status = statusFor(phase, connection, agentState, agentPresent, family),
             transcript = transcript,
         )
     }.combine(combine(permissionNeeded, voiceProblem, voiceConnecting, ::Triple)) { state, (permission, problem, connecting) ->
@@ -157,6 +157,10 @@ class RideViewModel(application: Application) : AndroidViewModel(application) {
         // A safety check needs the rider's voice ("main theek hoon"): never leave Pillion muted then.
         viewModelScope.launch {
             safety.state.collect { if (it != SafetyState.Idle && voice.micMuted.value) voice.setMicMuted(false) }
+        }
+        // Live Guardian: family on the line must hear the rider.
+        viewModelScope.launch {
+            voice.familyPresent.collect { if (it && voice.micMuted.value) voice.setMicMuted(false) }
         }
         refreshToday()
         viewModelScope.launch {
@@ -241,6 +245,7 @@ class RideViewModel(application: Application) : AndroidViewModel(application) {
                     requestSubtitles(voice.transcript.value)
                     rideServices = viewModelScope.launch { serveRide(started) }
                     safety.voice = repository.safetyVoice(started)
+                    safety.liveGuardian = repository.liveGuardian(started)
                 }
             } catch (error: TimeoutCancellationException) {
                 onVoiceFailed(generation, error)
@@ -272,6 +277,7 @@ class RideViewModel(application: Application) : AndroidViewModel(application) {
         rideServices?.cancel()
         rideServices = null
         safety.voice = null
+        safety.liveGuardian = null
         voiceProblem.value = message
         viewModelScope.launch {
             runCatching { repository.end(current.agentId) }
@@ -381,6 +387,9 @@ class RideViewModel(application: Application) : AndroidViewModel(application) {
         safety.startManualSos(SosTrigger.Button)
     }
 
+    /** Debug builds: the latest SOS live link (Live Guardian), to open it without the SMS. */
+    val lastLiveLink: StateFlow<String?> = repository.lastLiveLink
+
     /** Debug builds: a synthetic crash trace through the ride's real detector. */
     fun simulateCrash(): Boolean = safety.simulateCrash()
 
@@ -441,12 +450,14 @@ class RideViewModel(application: Application) : AndroidViewModel(application) {
         connection: ConnectionState,
         agentState: AgentState,
         agentPresent: Boolean,
+        familyPresent: Boolean,
     ): RideStatus = when (phase) {
         Phase.Idle -> RideStatus.Idle
         Phase.Ending -> RideStatus.Ending
         Phase.Ended -> RideStatus.Ended
         Phase.Active -> when {
             connection == ConnectionState.Reconnecting -> RideStatus.Reconnecting
+            familyPresent -> RideStatus.FamilyOnLine
             agentState == AgentState.Speaking -> RideStatus.Speaking
             agentState == AgentState.Thinking -> RideStatus.Thinking
             agentState == AgentState.Unknown && !agentPresent -> RideStatus.Connecting
@@ -466,6 +477,7 @@ class RideViewModel(application: Application) : AndroidViewModel(application) {
         const val MOVING_KMH = 10f
         val VOICE_STATUSES = setOf(
             RideStatus.Connecting, RideStatus.Listening, RideStatus.Thinking, RideStatus.Speaking, RideStatus.Reconnecting,
+            RideStatus.FamilyOnLine,
         )
     }
 }

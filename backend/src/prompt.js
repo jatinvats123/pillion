@@ -50,6 +50,14 @@ Safety
 
 export const GREETING = 'नमस्ते! मैं Pillion हूँ, आपके साथ ride पर। बोलिए, क्या मदद करूँ?';
 
+// Live Guardian: said once when family opens the SOS link (then the agent stops), and the greeting
+// of the agent that comes back when they leave. ("आपकी family line पे है" reads as "It is on your
+// family tree" in Sarvam's English subtitle; this wording comes out as "Your family is on the line.")
+export const FAMILY_JOINED = 'आपके घरवाले line पे हैं।';
+export const WELCOME_BACK = 'मैं वापस हूँ। कुछ चाहिए तो बोलिए।';
+export const RESUMED_CONTEXT =
+  "Context: an SOS was sent earlier in this ride and the rider's family just talked with them on the line. Don't bring it up unless the rider does.";
+
 export const FAILURE_MESSAGE = 'माफ़ कीजिए, एक बार फिर से बोलिए।';
 
 // Filler words bridge the wait while a tool runs (Agora generates one per turn, in context).

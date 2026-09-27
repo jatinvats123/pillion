@@ -80,6 +80,18 @@ fun interface SafetyVoice {
     suspend fun say(text: String, interrupt: Boolean): Boolean
 }
 
+/** Live Guardian, when the ride's voice is up and the feature is on. Optional: the SOS never waits on it. */
+interface LiveGuardianLink {
+    /** A new link for this SOS, made on the phone at once (the backend learns it in the background). */
+    fun newLink(riderName: String): String
+
+    /** I'M OK NOW: the family's page says so and stops following the rider. */
+    fun riderOk()
+
+    /** The ride's voice is gone: stop sharing. */
+    fun close()
+}
+
 /** A line for the ride transcript ("⚠ Crash detected", "✓ SOS sent to 2 contacts"). */
 data class ActionLine(val text: String, val failed: Boolean = false)
 
@@ -123,6 +135,13 @@ class SafetyMonitor(
             _voiceConnected.value = value != null
         }
 
+    /** Set with [voice] when Live Guardian is on; replacing or clearing it closes the old one. */
+    var liveGuardian: LiveGuardianLink? = null
+        set(value) {
+            if (field !== value) field?.close()
+            field = value
+        }
+
     private val _voiceConnected = MutableStateFlow(false)
     /** The rider can answer the alert by voice (Agora connected). */
     val voiceConnected: StateFlow<Boolean> = _voiceConnected.asStateFlow()
@@ -140,6 +159,7 @@ class SafetyMonitor(
     private var alertJob: Job? = null
     private var sosLogId: Long? = null
     private var sosFix: SosFix? = null
+    private var sosLink: String? = null
     /** The phone is speaking through its loudspeaker: transcripts now may be Pillion's own words. */
     private var deafUntilMs = 0L
 
@@ -174,6 +194,7 @@ class SafetyMonitor(
         rideJob?.cancel()
         rideJob = null
         voice = null
+        liveGuardian = null
         fatigue = null
         if (_state.value == SafetyState.Idle) stopRideService()
     }
@@ -322,7 +343,8 @@ class SafetyMonitor(
         _state.value = SafetyState.Sos(trigger, list.map { ContactStatus(it, DeliveryStatus.Sending) }, null, null, 0, config.followUpCount)
 
         val fix = currentFix().also { sosFix = it }
-        val text = SosMessages.first(name, reason, System.currentTimeMillis(), fix)
+        sosLink = runCatching { liveGuardian?.newLink(name) }.getOrNull()
+        val text = SosMessages.first(name, reason, System.currentTimeMillis(), fix, sosLink)
         val results = sendToAll(list, trackDelivery = true) { text }
         updateSos { it.copy(contacts = list.mapIndexed { i, c -> ContactStatus(c, if (results[i]) DeliveryStatus.Sent else DeliveryStatus.Failed) }) }
 
@@ -347,7 +369,7 @@ class SafetyMonitor(
             val fix = currentFix()
             val at = System.currentTimeMillis()
             val results = sendToAll(sos.contacts.map { it.contact }, trackDelivery = false) { i ->
-                if (sos.contacts[i].reached) SosMessages.followUp(name, at, fix) else SosMessages.first(name, reason, at, fix)
+                if (sos.contacts[i].reached) SosMessages.followUp(name, at, fix) else SosMessages.first(name, reason, at, fix, sosLink)
             }
             updateSos { current ->
                 current.copy(
@@ -371,6 +393,7 @@ class SafetyMonitor(
         alertJob?.cancel()
         alarm.stopAlert()
         val told = sos.contacts.filter { it.reached }
+        runCatching { liveGuardian?.riderOk() }
         setIdle()
         if (told.isEmpty()) {
             db.addSafetyEvent(KIND_SOS_ENDED, "Rider closed the SOS screen")
