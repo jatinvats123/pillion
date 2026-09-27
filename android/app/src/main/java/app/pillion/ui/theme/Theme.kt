@@ -1,5 +1,6 @@
 package app.pillion.ui.theme
 
+import android.content.Context
 import android.provider.Settings
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.material3.MaterialTheme
@@ -17,10 +18,7 @@ private val LocalReducedMotion = staticCompositionLocalOf { false }
 fun PillionTheme(dark: Boolean = isSystemInDarkTheme(), content: @Composable () -> Unit) {
     val colors = if (dark) DarkColors else LightColors
     val context = LocalContext.current
-    // "Remove animations" (Accessibility) sets the animator scale to 0.
-    val reducedMotion = remember(context) {
-        Settings.Global.getFloat(context.contentResolver, Settings.Global.ANIMATOR_DURATION_SCALE, 1f) == 0f
-    }
+    val reducedMotion = remember(context) { animationsOff(context) }
     CompositionLocalProvider(LocalPillionColors provides colors, LocalReducedMotion provides reducedMotion) {
         MaterialTheme(
             colorScheme = remember(colors) { colors.toColorScheme() },
@@ -30,6 +28,10 @@ fun PillionTheme(dark: Boolean = isSystemInDarkTheme(), content: @Composable () 
         )
     }
 }
+
+/** "Remove animations" (Accessibility) sets the animator scale to 0. */
+fun animationsOff(context: Context): Boolean =
+    Settings.Global.getFloat(context.contentResolver, Settings.Global.ANIMATOR_DURATION_SCALE, 1f) == 0f
 
 object Pillion {
     val colors: PillionColors

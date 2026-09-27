@@ -2,6 +2,7 @@ package app.pillion
 
 import android.content.Intent
 import android.graphics.Color
+import android.graphics.drawable.ColorDrawable
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.SystemBarStyle
@@ -42,8 +43,10 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import app.pillion.data.ThemeMode
 import app.pillion.device.RiderLocation
 import app.pillion.order.ScanState
+import app.pillion.safety.SafetyState
 import app.pillion.ui.EarningsRoute
 import app.pillion.ui.FirstRunRoute
+import app.pillion.ui.IntroVideo
 import app.pillion.ui.OrderCameraRoute
 import app.pillion.ui.RideRoute
 import app.pillion.ui.RideStatus
@@ -54,6 +57,7 @@ import app.pillion.ui.theme.DEFAULT_LAT
 import app.pillion.ui.theme.DEFAULT_LNG
 import app.pillion.ui.theme.Pillion
 import app.pillion.ui.theme.PillionTheme
+import app.pillion.ui.theme.animationsOff
 import app.pillion.ui.theme.isNight
 import kotlinx.coroutines.delay
 
@@ -68,12 +72,21 @@ class MainActivity : ComponentActivity() {
     }
 
     private var screen by mutableStateOf(Screen.Ride)
+    /** The 2 s intro video, over the app, on a launcher cold start. */
+    private var showIntro by mutableStateOf(false)
     /** Where Settings goes back to. */
     private var lastTab = Screen.Ride
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         screen = savedInstanceState?.getString(KEY_SCREEN)?.let(Screen::valueOf) ?: Screen.Ride
+        // Not on re-creation, a share, "Remove animations", or while a safety alert is on.
+        showIntro = savedInstanceState == null &&
+            intent?.action == Intent.ACTION_MAIN &&
+            !animationsOff(this) &&
+            pillion.safety.state.value == SafetyState.Idle
+        // The launch window is black like the intro's first frame; without the intro, the app's own colour.
+        if (!showIntro) useAppWindowBackground()
         val prefs = pillion.uiPrefs
         setContent {
             val themeMode by prefs.themeMode.collectAsStateWithLifecycle()
@@ -140,7 +153,17 @@ class MainActivity : ComponentActivity() {
                     }
                 }
             }
+            if (showIntro) {
+                IntroVideo(onDone = {
+                    showIntro = false
+                    useAppWindowBackground()
+                })
+            }
         }
+    }
+
+    private fun useAppWindowBackground() {
+        window.setBackgroundDrawable(ColorDrawable(getColor(R.color.background)))
     }
 
     private fun openSettings() {

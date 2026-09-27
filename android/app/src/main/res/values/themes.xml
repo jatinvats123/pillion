@@ -7,6 +7,12 @@
         <item name="android:navigationBarColor">@android:color/transparent</item>
     </style>
 
+    <!-- The launcher activity: black from the first frame, like the intro video (MainActivity
+         switches to the app colour when there's no intro). -->
+    <style name="Theme.Pillion.Launch" parent="Theme.Pillion">
+        <item name="android:windowBackground">@color/intro_black</item>
+    </style>
+
     <!-- Crash / SOS alert: dark from the first frame, over the lock screen. -->
     <style name="Theme.Pillion.Alert" parent="android:Theme.Material.NoActionBar">
         <item name="android:windowBackground">@color/alert_window</item>
