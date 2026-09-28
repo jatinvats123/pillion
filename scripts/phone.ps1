@@ -42,6 +42,12 @@ if (-not $Serial) {
     if (@($phones).Count -ne 1) { throw "Expected exactly one phone, found: $(@($phones) -join ', '). Pass -Serial." }
     $Serial = @($phones)[0]
 }
+if ($Serial -match ':\d+$' -and -not (& $adb devices | Select-String "^$([regex]::Escape($Serial))\s+device")) {
+    & $adb connect $Serial | Out-Null
+}
+if (-not (& $adb devices | Select-String "^$([regex]::Escape($Serial))\s+device")) {
+    throw "Phone $Serial not connected. Unlock it, open Wireless debugging (same Wi-Fi, no VPN) and use the IP:port shown there, or plug in USB and run without -Serial."
+}
 $model = (& $adb -s $Serial shell getprop ro.product.model).Trim()
 $android = (& $adb -s $Serial shell getprop ro.build.version.release).Trim()
 Write-Host "Phone: $model (Android $android) [$Serial]"
