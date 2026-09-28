@@ -92,10 +92,15 @@ $apk = Join-Path $root 'android\app\build\outputs\apk\debug\app-debug.apk'
 if (-not $SkipBuild) {
     if (-not $env:JAVA_HOME) { $env:JAVA_HOME = 'C:\Program Files\Android\Android Studio\jbr' }
     Push-Location (Join-Path $root 'android')
+    # Gradle writes warnings (e.g. "SDK processing") to stderr; only its exit code means failure.
+    $ErrorActionPreference = 'Continue'
     try {
-        & .\gradlew.bat :app:assembleDebug -q "-PPILLION_BACKEND_URL=$backendUrls"
+        & .\gradlew.bat :app:assembleDebug -q "-PPILLION_BACKEND_URL=$backendUrls" 2>&1 | ForEach-Object { "$_" }
         if ($LASTEXITCODE -ne 0) { throw 'Gradle build failed.' }
-    } finally { Pop-Location }
+    } finally {
+        $ErrorActionPreference = 'Stop'
+        Pop-Location
+    }
 }
 & $adb -s $Serial install -r $apk
 if ($LASTEXITCODE -ne 0) { throw 'Install failed (on Realme, allow "Install via USB" in Developer options).' }
