@@ -6,13 +6,13 @@ import org.junit.Test
 class PhoneMaskTest {
 
     @Test
-    fun mobileShowsFirstFiveDigits() = assertEquals("98113 •••••", maskPhone("9811345010"))
+    fun mobileShowsFirstFiveDigits() = assertEquals("98113 •••••", maskPhone("9811300000"))
 
     @Test
     fun countryCodeAndSpacesAreDropped() {
-        assertEquals("98113 •••••", maskPhone("+91 98113 45010"))
-        assertEquals("98113 •••••", maskPhone("91-9811345010"))
-        assertEquals("98113 •••••", maskPhone("09811345010"))
+        assertEquals("98113 •••••", maskPhone("+91 98113 00000"))
+        assertEquals("98113 •••••", maskPhone("91-9811300000"))
+        assertEquals("98113 •••••", maskPhone("09811300000"))
     }
 
     @Test
@@ -25,5 +25,5 @@ class PhoneMaskTest {
     }
 
     @Test
-    fun spokenPartIsTheVisibleDigits() = assertEquals("98113", maskedPhoneDigits("+919811345010"))
+    fun spokenPartIsTheVisibleDigits() = assertEquals("98113", maskedPhoneDigits("+919811300000"))
 }

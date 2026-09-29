@@ -245,7 +245,9 @@ private fun TryCrashCheck(onStarted: () -> Unit) {
     if (confirming) {
         AlertDialog(
             onDismissRequest = { confirming = false },
-            title = { Text(stringResource(R.string.settings_try_crash_confirm_title)) },
+            title = {
+                Text(stringResource(if (contacts.isEmpty()) R.string.settings_try_crash_confirm_title_no_contacts else R.string.settings_try_crash_confirm_title))
+            },
             text = {
                 Text(
                     if (contacts.isEmpty()) {

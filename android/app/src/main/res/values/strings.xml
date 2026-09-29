@@ -154,6 +154,7 @@
     <string name="settings_try_crash_needs_ride">Start a ride first: the crash check runs during a ride.</string>
     <string name="settings_try_crash_button">Try the crash check</string>
     <string name="settings_try_crash_confirm_title">This can send a real SOS</string>
+    <string name="settings_try_crash_confirm_title_no_contacts">Start the crash check?</string>
     <plurals name="settings_try_crash_confirm">
         <item quantity="one">If nobody answers in 20 seconds, Pillion sends a REAL SMS with your location to your emergency contact, and a live link if the voice is connected. Tell them it’s a test first.</item>
         <item quantity="other">If nobody answers in 20 seconds, Pillion sends a REAL SMS with your location to your %d emergency contacts, and a live link if the voice is connected. Tell them it’s a test first.</item>
@@ -163,7 +164,7 @@
     <string name="settings_about">About</string>
     <string name="settings_version">Pillion %1$s</string>
     <string name="settings_about_body">Built for the Agora Voice AI Hackathon. Voice by Agora Conversational AI, speech by Sarvam, answers by gpt-4o-mini. Crash detection, SOS and order scan run on this phone.</string>
-    <string name="settings_licences">Fonts: Geist and Noto Sans Devanagari (SIL Open Font License 1.1). Icons: Material Symbols (Apache 2.0).</string>
+    <string name="settings_licences">Fonts: Geist, Instrument Serif, Instrument Sans and Noto Sans Devanagari (SIL Open Font License 1.1). Icons: Material Symbols (Apache 2.0).</string>
     <string name="settings_debug">Debug build</string>
     <string name="settings_debug_backend">Backend: %1$s</string>
     <string name="settings_debug_first_run">Show the welcome screen again</string>
