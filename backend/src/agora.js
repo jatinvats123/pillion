@@ -23,6 +23,7 @@ import {
   SYSTEM_PROMPT,
   WELCOME_BACK,
 } from './prompt.js';
+import { rideHasLinks } from './guardian.js';
 import { agentStarted, agentStopped, rideStarted } from './limits.js';
 import { createRide, endRide, rideForAgent, rideForToken } from './rides.js';
 import { sendToRider } from './rtm.js';
@@ -217,18 +218,26 @@ const TIME_UP_LINE_MS = 7000; // the time-up line: first audio ~1–1.5 s + ~5 s
 
 /**
  * MAX_RIDE_MINUTES after the start, the voice ends: the agent says so and is stopped; a Live
- * Guardian handoff can't bring it back. The ride itself stays (its links keep working until they
- * expire, and the phone keeps crash detection and SOS); the app gets a `pillion.notice`.
+ * Guardian handoff can't bring it back. Never while an SOS link is live (checked every minute
+ * after the limit): the phone keeps the voice channel open for family. The app gets a
+ * `pillion.notice`; the phone keeps crash detection and SOS.
  */
 function startRideTimer(ride) {
   const minutes = config.limits.maxRideMinutes;
   if (!minutes) return;
-  ride.limitTimer = setTimeout(() => {
+  const check = () => {
+    // An SOS link is live: family may open it any moment, so the voice stays until it isn't.
+    if (rideHasLinks(ride)) {
+      ride.limitTimer = setTimeout(check, 60_000);
+      ride.limitTimer.unref();
+      return;
+    }
     ride.timeUp = true;
     ride.handoff = ride.handoff
       .then(() => endVoiceForTimeLimit(ride, minutes))
       .catch((error) => console.warn(`[limit] ride=${ride.channel.slice(-6)} stop failed: ${describeError(error)}`));
-  }, minutes * 60_000);
+  };
+  ride.limitTimer = setTimeout(check, minutes * 60_000);
   ride.limitTimer.unref();
 }
 

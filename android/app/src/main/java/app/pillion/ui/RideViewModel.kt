@@ -222,7 +222,7 @@ class RideViewModel(application: Application) : AndroidViewModel(application) {
                 dropVoice(
                     when (event) {
                         VoiceEvent.AgentLeft -> voice.timeLimitMinutes?.let {
-                            "Demo rides have $it minutes of voice. Crash detection and SOS are still on; Retry starts a new voice session."
+                            "Demo rides have $it minutes of voice. Retry starts a new voice session."
                         } ?: "Pillion's voice disconnected."
                         is VoiceEvent.ConnectionFailed -> "Voice connection lost."
                     }

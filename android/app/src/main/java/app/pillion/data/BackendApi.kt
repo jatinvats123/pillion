@@ -38,10 +38,13 @@ data class RideCredentials(
 /** [code]: the server's error code (`demo_limit_reached`, `slow_down`…); [message] is fit to show. */
 class BackendException(message: String, val code: String = "") : IOException(message)
 
-/** The public server's refusals, as the rider reads them (safety never depends on the server). */
+/**
+ * The public server's refusals, as the rider reads them. The voice-offline panel adds that crash
+ * detection and SOS still work (they never depend on the server).
+ */
 private fun refusalMessage(code: String): String? = when (code) {
-    "demo_limit_reached" -> "Demo limit reached for today. Try again later: crash detection and SOS still work."
-    "rides_paused" -> "Pillion's voice is paused right now. Crash detection and SOS still work."
+    "demo_limit_reached" -> "Demo limit reached for today. Try again later."
+    "rides_paused" -> "Pillion's voice is paused right now."
     "server_busy" -> "Pillion is busy with other riders. Try again in a minute."
     "slow_down" -> "Too many tries. Wait a minute, then tap Retry."
     "app_key_required" -> "This version of Pillion can't use the server. Please update the app."
