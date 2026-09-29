@@ -111,7 +111,7 @@ export function validateConfig() {
   }
 
   if (problems.length) {
-    throw new Error(`Invalid backend/.env:\n  - ${problems.join('\n  - ')}`);
+    throw new Error(`Invalid settings (backend/.env locally, Environment variables on a host):\n  - ${problems.join('\n  - ')}`);
   }
 }
 
