@@ -47,7 +47,7 @@ class RideService : Service() {
             PendingIntent.FLAG_IMMUTABLE,
         )
         val notification = NotificationCompat.Builder(this, CHANNEL_ID)
-            .setSmallIcon(R.drawable.ic_stat_ride)
+            .setSmallIcon(R.drawable.ic_stat_pillion)
             .setContentTitle(getString(R.string.notification_ride_title))
             .setContentText(getString(R.string.notification_ride_text))
             .setContentIntent(openApp)

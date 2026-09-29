@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 64 64">
+  <!-- The Pillion logo (android/app/src/main/res/drawable/ic_pillion_logo.xml). -->
+  <defs>
+    <linearGradient id="tile" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#26232F"/>
+      <stop offset="1" stop-color="#121018"/>
+    </linearGradient>
+    <radialGradient id="orb" gradientUnits="userSpaceOnUse" cx="31.896" cy="25.344" r="7.36">
+      <stop offset="0" stop-color="#DDD6FE"/>
+      <stop offset="0.45" stop-color="#8B5CF6"/>
+      <stop offset="1" stop-color="#5B21B6"/>
+    </radialGradient>
+  </defs>
+  <rect width="64" height="64" rx="18" fill="url(#tile)"/>
+  <rect x="0.75" y="0.75" width="62.5" height="62.5" rx="17.25" fill="none" stroke="#FFFFFF" stroke-opacity="0.12" stroke-width="1.5"/>
+  <path d="M22,48V16" stroke="#FFFFFF" stroke-width="6" stroke-linecap="round" fill="none"/>
+  <circle cx="33" cy="27" r="11" stroke="#FFFFFF" stroke-width="6" fill="none"/>
+  <circle cx="33" cy="27" r="4.6" fill="url(#orb)"/>
+</svg>

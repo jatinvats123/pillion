@@ -4,7 +4,6 @@
     <color name="background">#FFF6F3EE</color>
     <!-- The intro video's first and last frames. -->
     <color name="intro_black">#FF000000</color>
-    <color name="launcher_background">#FF111110</color>
     <!-- The crash alert is always dark, whatever the app theme. -->
     <color name="alert_window">#FF111110</color>
 </resources>

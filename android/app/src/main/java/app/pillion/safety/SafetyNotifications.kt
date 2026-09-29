@@ -59,7 +59,7 @@ class SafetyNotifications(context: Context) {
             appContext, 1, Intent(appContext, SafetyActionReceiver::class.java).setAction(ACTION_OK), PendingIntent.FLAG_IMMUTABLE,
         )
         val notification = NotificationCompat.Builder(appContext, CHANNEL_ID)
-            .setSmallIcon(R.drawable.ic_stat_ride)
+            .setSmallIcon(R.drawable.ic_stat_pillion)
             .setContentTitle(appContext.getString(title))
             .setContentText(appContext.getString(text))
             .setPriority(NotificationCompat.PRIORITY_MAX)
