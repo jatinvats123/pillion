@@ -42,6 +42,9 @@ export function createRide({ channel, uid }) {
 
 export const rideForToken = (token) => (token ? rides.get(token) : undefined);
 
+/** The most recently started ride (local screenshots and demos: /debug/think-latest). */
+export const newestRide = () => [...rides.values()].reduce((a, b) => (!a || b.startedAt > a.startedAt ? b : a), undefined);
+
 /** Rides with a running agent (paused-for-family and timed-out rides don't count). */
 export const liveRideCount = () => [...rides.values()].filter((ride) => ride.agentId).length;
 

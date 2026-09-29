@@ -26,7 +26,7 @@ import {
   rideCallAllowed,
   translateAllowed,
 } from './limits.js';
-import { answerFromPhone, liveRideCount, rideForToken } from './rides.js';
+import { answerFromPhone, liveRideCount, newestRide, rideForToken } from './rides.js';
 import { onRiderTurn, runTool } from './tools.js';
 import { toEnglish } from './translate.js';
 
@@ -305,6 +305,20 @@ app.post(
     }
   }),
 );
+
+// Screenshots and demo recordings from the laptop: the same, into the newest ride (whose token only
+// the phone has). Debug routes on and this machine / local network only, never through Cloudflare.
+app.post('/debug/think-latest', debugOnly, localOnly, async (req, res) => {
+  const ride = newestRide();
+  const text = String(req.body?.text ?? '').trim();
+  if (!text || !ride?.session) return res.status(400).json({ error: 'text and a started ride are required' });
+  try {
+    await ride.session.think(text);
+    res.json({ ok: true, ride: ride.channel.slice(-6) });
+  } catch (error) {
+    res.status(502).json({ error: describe(error) });
+  }
+});
 
 app.get(
   '/debug/history',
