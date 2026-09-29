@@ -81,6 +81,11 @@ class BackendApi(
         post("/ride/say", JSONObject().put("text", text).put("interrupt", interrupt), rideToken, connectTimeoutMs = 2_000, readTimeoutMs = 3_000)
     }
 
+    /** Debug builds: the agent handles [text] as if the rider had said it (Agora think). */
+    suspend fun debugThink(rideToken: String, text: String) {
+        post("/debug/think", JSONObject().put("text", text), rideToken)
+    }
+
     /** Live Guardian: this ride's SOS SMS carries `<base>/g/[token]` (made on the phone). */
     suspend fun registerGuardianLink(rideToken: String, token: String, riderName: String) {
         post("/ride/guardian/link", JSONObject().put("token", token).put("name", riderName), rideToken, connectTimeoutMs = 3_000, readTimeoutMs = 5_000)

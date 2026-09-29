@@ -2,11 +2,28 @@
     <string name="app_name">Pillion</string>
     <string name="tagline">The AI that rides with you</string>
 
-    <string name="start_ride">Start Ride</string>
-    <string name="end_ride">End Ride</string>
+    <string name="start_ride">Start ride</string>
+    <string name="end_ride">End ride</string>
     <string name="ending_ride">Ending…</string>
 
     <string name="status_idle">Ready</string>
+    <!-- Riding, voice connected, nobody talking: Pillion is hands-free, so this invites a question. -->
+    <string name="status_ready">Say something</string>
+    <string name="orb_ready">Pillion is waiting for you to speak</string>
+    <string name="on_ride">on ride</string>
+    <plurals name="ride_time_description">
+        <item quantity="one">%d minute on this ride</item>
+        <item quantity="other">%d minutes on this ride</item>
+    </plurals>
+    <string name="theme_to_light">Switch to light mode</string>
+    <string name="theme_to_dark">Switch to dark mode</string>
+    <!-- Next-drop panel caption: "Next drop · Rahul". -->
+    <string name="next_drop_for">Next drop · %1$s</string>
+    <string name="order_open">Show the order</string>
+    <!-- Debug builds: cycles the globe and pill through the voice states. -->
+    <string name="debug_voice_preview">Voice preview: %1$s</string>
+    <string name="debug_voice_preview_off">off (real voice)</string>
+    <string name="debug_ask">Ask Pillion \"next drop kitna door?\" (typed)</string>
     <string name="status_connecting">Connecting</string>
     <string name="status_listening">Listening</string>
     <string name="status_thinking">Thinking</string>
@@ -86,6 +103,10 @@
     <string name="summary_demo_note">Demo order: the earning is its sample payout.</string>
     <string name="summary_safety">Safety</string>
     <string name="summary_no_events">No safety events on this ride.</string>
+    <plurals name="summary_event_count">
+        <item quantity="one">%d safety event on this ride</item>
+        <item quantity="other">%d safety events on this ride</item>
+    </plurals>
 
     <!-- Earnings -->
     <string name="earnings_week">Last 7 days</string>
@@ -121,7 +142,7 @@
     <string name="theme_system">System</string>
     <string name="theme_light">Light</string>
     <string name="theme_dark">Dark</string>
-    <string name="settings_theme_note">During a ride after sunset the ride screen is always dark, to avoid glare.</string>
+    <string name="settings_theme_note">On System, a ride after sunset is always dark, to avoid glare. Light or Dark (here or the sun/moon button) always wins.</string>
     <string name="settings_subtitles">English subtitles</string>
     <string name="settings_subtitles_switch">Show English under Hindi lines</string>
     <string name="settings_subtitles_note">Translated by Sarvam through the Pillion server. Off saves those calls; the voice is unchanged.</string>
@@ -130,7 +151,7 @@
     <string name="settings_about">About</string>
     <string name="settings_version">Pillion %1$s</string>
     <string name="settings_about_body">Built for the Agora Voice AI Hackathon. Voice by Agora Conversational AI, speech by Sarvam, answers by gpt-4o-mini. Crash detection, SOS and order scan run on this phone.</string>
-    <string name="settings_licences">Fonts: Inter and Noto Sans Devanagari (SIL Open Font License 1.1). Icons: Material Symbols (Apache 2.0).</string>
+    <string name="settings_licences">Fonts: Geist and Noto Sans Devanagari (SIL Open Font License 1.1). Icons: Material Symbols (Apache 2.0).</string>
     <string name="settings_debug">Debug build</string>
     <string name="settings_debug_backend">Backend: %1$s</string>
     <string name="settings_debug_first_run">Show the welcome screen again</string>
@@ -148,6 +169,8 @@
     <string name="first_run_skip">Skip for now</string>
 
     <string name="speaker_rider">You</string>
+    <!-- Before a Hindi line the rider said, as in the design ("आप · नेक्स्ट ड्रॉप कितना दूर है?"). -->
+    <string name="speaker_rider_hindi">आप</string>
     <string name="speaker_pillion">Pillion</string>
     <string name="transcript_empty">Tap Start Ride and talk in Hindi, English or Hinglish.</string>
     <string name="interrupted">interrupted</string>
@@ -271,6 +294,8 @@
     <string name="order_scan_gallery">Screenshot</string>
     <string name="order_scan_camera">Camera</string>
     <string name="order_use_demo">Use demo order</string>
+    <string name="order_back_to">Back to %1$s’s order</string>
+    <string name="order_back_to_scanned">Back to my scanned order</string>
     <string name="order_share_hint">Or share a screenshot of the order to Pillion from your delivery app.</string>
     <string name="order_stop_to_scan_title">Stop the bike to scan</string>
     <string name="order_stop_to_scan_body">Scanning needs you to look at the screen. Scan once you\'ve stopped.</string>

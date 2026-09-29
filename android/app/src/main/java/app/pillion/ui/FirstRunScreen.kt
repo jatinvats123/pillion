@@ -38,8 +38,8 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import app.pillion.R
 import app.pillion.pillion
 import app.pillion.safety.EmergencyContacts
-import app.pillion.ui.components.Orb
-import app.pillion.ui.components.OrbMood
+import app.pillion.ui.components.GlassGlobe
+import app.pillion.ui.components.pillionBackground
 import app.pillion.ui.components.PillButton
 import app.pillion.ui.theme.Pillion
 import app.pillion.ui.theme.RideType
@@ -65,7 +65,9 @@ fun FirstRunRoute(onDone: () -> Unit) {
         onDone()
     }
 
-    Column(Modifier.fillMaxSize().safeDrawingPadding()) {
+    Column(Modifier.fillMaxSize().pillionBackground(colors).safeDrawingPadding()) {
+        // Outside the scrolling column: the globe's surface isn't clipped by Compose, so it never scrolls.
+        GlassGlobe(RideVoiceState.Idle, micLevel = { 0f }, description = stringResource(R.string.orb_dormant), modifier = Modifier.fillMaxWidth().height(180.dp))
         Column(
             Modifier
                 .weight(1f)
@@ -73,7 +75,6 @@ fun FirstRunRoute(onDone: () -> Unit) {
                 .padding(horizontal = Space.gutter),
             verticalArrangement = Arrangement.spacedBy(Space.m),
         ) {
-            Orb(OrbMood.Dormant, level = { 0f }, description = stringResource(R.string.orb_dormant), modifier = Modifier.fillMaxWidth().height(180.dp))
             Text(
                 stringResource(R.string.first_run_title),
                 style = MaterialTheme.typography.headlineLarge,

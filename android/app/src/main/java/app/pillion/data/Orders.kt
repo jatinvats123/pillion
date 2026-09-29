@@ -75,33 +75,58 @@ class SeededOrderSource(context: Context) : OrderSource {
 }
 
 /**
- * The order the rider scanned from their delivery app (kept on the phone only, until replaced or
- * cleared), else the seeded demo order.
+ * The order the rider scanned from their delivery app (kept on the phone only, until replaced),
+ * else the seeded demo order. Switching to the demo keeps the scanned order so the rider can go
+ * back to it without scanning again.
  */
 class ActiveOrderSource(context: Context) : OrderSource {
 
     private val prefs = context.applicationContext.getSharedPreferences("active_order", Context.MODE_PRIVATE)
     private val seeded = SeededOrderSource(context)
-    private val _order = MutableStateFlow(load() ?: seeded.activeOrder())
+    private val stored = load()
+    private val demoChosen = prefs.getBoolean(KEY_DEMO, false)
+    private val _order = MutableStateFlow(stored?.takeUnless { demoChosen } ?: seeded.activeOrder())
     val order: StateFlow<Order> = _order.asStateFlow()
+    private val _setAside = MutableStateFlow(stored?.takeIf { demoChosen })
+    /** The scanned order while the demo order is shown; null otherwise. */
+    val setAside: StateFlow<Order?> = _setAside.asStateFlow()
 
     override fun activeOrder(): Order = _order.value
 
     fun set(order: Order) {
-        prefs.edit { putString(KEY_ORDER, order.toJson().toString()) }
+        prefs.edit {
+            putString(KEY_ORDER, order.toJson().toString())
+            remove(KEY_DEMO)
+        }
         _order.value = order
+        _setAside.value = null
     }
 
     /** The drop's map lookup finished; ignored if the rider has set another order since. */
     fun updateDrop(of: Order, drop: DropLocation, area: String) {
-        if (_order.value != of) return
-        set(of.copy(drop = drop, dropArea = area))
+        val located = of.copy(drop = drop, dropArea = area)
+        when (of) {
+            _order.value -> set(located)
+            // The rider switched to the demo order while the lookup ran.
+            _setAside.value -> {
+                prefs.edit { putString(KEY_ORDER, located.toJson().toString()) }
+                _setAside.value = located
+            }
+        }
     }
 
-    /** Back to the demo order. */
-    fun clear() {
-        prefs.edit { remove(KEY_ORDER) }
+    /** The demo order; a scanned order is kept for [restore]. */
+    fun useDemo() {
+        val current = _order.value
+        if (current.isDemo) return
+        prefs.edit { putBoolean(KEY_DEMO, true) }
+        _setAside.value = current
         _order.value = seeded.activeOrder()
+    }
+
+    /** Back from the demo order to the scanned one. */
+    fun restore() {
+        _setAside.value?.let(::set)
     }
 
     /** Debug builds: the demo order's customer number for SMS/call tests. */
@@ -145,5 +170,6 @@ class ActiveOrderSource(context: Context) : OrderSource {
 
     private companion object {
         const val KEY_ORDER = "order"
+        const val KEY_DEMO = "demo_chosen"
     }
 }

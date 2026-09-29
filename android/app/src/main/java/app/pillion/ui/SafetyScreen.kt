@@ -163,9 +163,9 @@ private fun ContactRow(
             Text(contact.number, style = MaterialTheme.typography.bodyMedium, color = colors.inkSecondary)
             if (first) Tag(stringResource(R.string.safety_first_contact), Modifier.padding(top = Space.xs))
         }
-        if (canMoveUp) RoundIconButton(R.drawable.ic_arrow_upward, stringResource(R.string.move_up_description, contact.name), { onMove(-1) }, container = colors.surface)
-        if (canMoveDown) RoundIconButton(R.drawable.ic_arrow_downward, stringResource(R.string.move_down_description, contact.name), { onMove(1) }, container = colors.surface)
-        RoundIconButton(R.drawable.ic_delete, stringResource(R.string.remove_description, contact.name), onRemove, container = colors.surface, content = colors.danger)
+        if (canMoveUp) RoundIconButton(R.drawable.ic_arrow_upward, stringResource(R.string.move_up_description, contact.name), { onMove(-1) })
+        if (canMoveDown) RoundIconButton(R.drawable.ic_arrow_downward, stringResource(R.string.move_down_description, contact.name), { onMove(1) })
+        RoundIconButton(R.drawable.ic_delete, stringResource(R.string.remove_description, contact.name), onRemove, content = colors.danger)
     }
 }
 

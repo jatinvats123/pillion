@@ -20,39 +20,30 @@ import app.pillion.R
 import java.nio.ByteBuffer
 
 /**
- * Inter for Latin, Noto Sans Devanagari for Hindi, bundled (res/font, variable, OFL) so Hinglish
+ * Geist for Latin, Noto Sans Devanagari for Hindi, bundled (res/font, variable, OFL) so Hinglish
  * lines read as one family offline. Android 10+ joins them per character with a custom fallback
- * chain (Inter first); Android 8–9 get Inter with the system's Devanagari font.
- *
- * Inter's optical size axis: 14 for text, 32 for big display text (tighter, crisper).
+ * chain (Geist first); Android 8–9 get Geist with the system's Devanagari font.
  */
-private val TextWeights = listOf(FontWeight.Normal, FontWeight.Medium, FontWeight.SemiBold, FontWeight.Bold)
-private val DisplayWeights = listOf(FontWeight.Medium, FontWeight.SemiBold, FontWeight.Bold, FontWeight.Black)
+private val Weights = listOf(FontWeight.Normal, FontWeight.Medium, FontWeight.SemiBold, FontWeight.Bold, FontWeight.ExtraBold, FontWeight.Black)
 
-val PillionFont: FontFamily = family(TextWeights, opticalSize = 14f)
-val PillionDisplayFont: FontFamily = family(DisplayWeights, opticalSize = 32f)
+val PillionFont: FontFamily = FontFamily(Weights.map(::weighted))
+val PillionDisplayFont: FontFamily = PillionFont
 
 // Resource fonts with variation settings are still marked experimental; stable in practice since Compose 1.2.
 @OptIn(ExperimentalTextApi::class)
-private fun family(weights: List<FontWeight>, opticalSize: Float): FontFamily = FontFamily(
-    weights.map { weight ->
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            InterWithDevanagari(weight, opticalSize)
-        } else {
-            Font(
-                resId = R.font.inter_variable,
-                weight = weight,
-                variationSettings = FontVariation.Settings(
-                    FontVariation.weight(weight.weight),
-                    FontVariation.Setting("opsz", opticalSize),
-                ),
-            )
-        }
+private fun weighted(weight: FontWeight): androidx.compose.ui.text.font.Font =
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+        GeistWithDevanagari(weight)
+    } else {
+        Font(
+            resId = R.font.geist_variable,
+            weight = weight,
+            variationSettings = FontVariation.Settings(FontVariation.weight(weight.weight)),
+        )
     }
-)
 
 /**
- * Reads the font files (1.5 MB) ahead of the first frame; call off the main thread at app start.
+ * Reads the font files (1.2 MB) ahead of the first frame; call off the main thread at app start.
  * Measured on the emulator: the first text otherwise waits ~470 ms for them.
  */
 fun preloadFonts(context: Context) {
@@ -60,7 +51,7 @@ fun preloadFonts(context: Context) {
 }
 
 @RequiresApi(Build.VERSION_CODES.Q)
-private data class InterWithDevanagari(override val weight: FontWeight, val opticalSize: Float) :
+private data class GeistWithDevanagari(override val weight: FontWeight) :
     AndroidFont(FontLoadingStrategy.Blocking, FallbackLoader, FontVariation.Settings()) {
     override val style: FontStyle = FontStyle.Normal
 }
@@ -72,11 +63,10 @@ private object FallbackLoader : AndroidFont.TypefaceLoader {
 
     @Synchronized
     override fun loadBlocking(context: Context, font: AndroidFont): Typeface {
-        font as InterWithDevanagari
         val weight = font.weight.weight
-        val latin = android.graphics.fonts.Font.Builder(file(context, R.font.inter_variable))
+        val latin = android.graphics.fonts.Font.Builder(file(context, R.font.geist_variable))
             .setWeight(weight)
-            .setFontVariationSettings("'wght' $weight, 'opsz' ${font.opticalSize}")
+            .setFontVariationSettings("'wght' $weight")
             .build()
         val hindi = android.graphics.fonts.Font.Builder(file(context, R.font.noto_sans_devanagari_variable))
             .setWeight(weight)
@@ -92,7 +82,7 @@ private object FallbackLoader : AndroidFont.TypefaceLoader {
 
     @Synchronized
     fun preload(context: Context) {
-        file(context, R.font.inter_variable)
+        file(context, R.font.geist_variable)
         file(context, R.font.noto_sans_devanagari_variable)
     }
 
@@ -125,14 +115,22 @@ val PillionTypography = Typography(
     labelSmall = style(PillionFont, 12.sp, 16.sp, FontWeight.Medium),
 )
 
-/** The ride screen, read at arm's length on a moving bike. */
+/** The ride screen (sizes from the A7/A8 design), read at arm's length on a moving bike. */
 object RideType {
     /** The newest line of the conversation. */
-    val latest = style(PillionDisplayFont, 34.sp, 48.sp, FontWeight.SemiBold)
-    /** Older lines and the English subtitle of the newest. */
-    val secondary = style(PillionFont, 24.sp, 34.sp, FontWeight.Normal)
+    val latest = style(PillionDisplayFont, 30.sp, 39.sp, FontWeight.SemiBold)
+    /** The line before it ("आप · …"). */
+    val secondary = style(PillionFont, 17.sp, 24.sp, FontWeight.Normal)
+    /** The English subtitle of a Hindi line. */
+    val subtitle = style(PillionFont, 16.sp, 22.sp, FontWeight.Normal)
     /** Ride controls' labels. */
-    val control = style(PillionFont, 22.sp, 28.sp, FontWeight.SemiBold)
+    val control = style(PillionFont, 20.sp, 26.sp, FontWeight.SemiBold)
+    /** The status pill's word. */
+    val pill = style(PillionFont, 15.sp, 20.sp, FontWeight.SemiBold)
+    /** Ride time and the next drop's distance and minutes. */
+    val figure = style(PillionFont, 22.sp, 28.sp, FontWeight.SemiBold).copy(fontFeatureSettings = "tnum")
+    /** Small labels under figures ("on ride", "Next drop · Rahul"). */
+    val caption = style(PillionFont, 13.sp, 18.sp, FontWeight.Normal)
     /** Money, times and counts line up. */
     val tabular = TextStyle(fontFeatureSettings = "tnum")
 }

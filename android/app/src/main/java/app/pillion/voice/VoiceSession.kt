@@ -130,6 +130,9 @@ class VoiceSession(context: Context) {
     val riderLevel: StateFlow<Float> = _riderLevel.asStateFlow()
     private val _agentLevel = MutableStateFlow(0f)
     val agentLevel: StateFlow<Float> = _agentLevel.asStateFlow()
+    private val _riderSpeaking = MutableStateFlow(false)
+    /** Agora's local voice activity detection: the rider is talking (never while muted). */
+    val riderSpeaking: StateFlow<Boolean> = _riderSpeaking.asStateFlow()
 
     private val _micMuted = MutableStateFlow(false)
     /** The rider muted Pillion: the mic stays captured locally but nothing is sent to the agent. */
@@ -232,6 +235,7 @@ class VoiceSession(context: Context) {
         _agentState.value = AgentState.Unknown
         _riderLevel.value = 0f
         _agentLevel.value = 0f
+        _riderSpeaking.value = false
     }
 
     private fun onFamily(uid: Int, joined: Boolean) {
@@ -370,6 +374,7 @@ class VoiceSession(context: Context) {
             val local = list.firstOrNull { it.uid == 0 }
             if (local != null) {
                 _riderLevel.value = if (_micMuted.value) 0f else local.volume / 255f
+                _riderSpeaking.value = !_micMuted.value && local.vad == 1
                 if (BuildConfig.DEBUG && local.vad == 1) latencyTracker.onRiderVoice(System.currentTimeMillis())
             } else {
                 _agentLevel.value = (list.firstOrNull { it.uid == ride?.agentUid }?.volume ?: 0) / 255f

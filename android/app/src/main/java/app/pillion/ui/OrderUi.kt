@@ -2,6 +2,7 @@ package app.pillion.ui
 
 import android.graphics.BitmapFactory
 import androidx.annotation.DrawableRes
+import androidx.annotation.StringRes
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.FlowRow
@@ -66,17 +67,12 @@ fun ActiveOrderCard(
     onScanScreenshot: () -> Unit,
     onScanCamera: () -> Unit,
     onUseDemo: () -> Unit,
+    setAside: Order?,
+    onRestore: () -> Unit,
 ) {
     val colors = Pillion.colors
     PillionCard {
-        Tag(
-            text = when {
-                order.isDemo -> stringResource(R.string.order_demo)
-                order.orderId.isNotBlank() -> "${stringResource(R.string.order_current)} · ${stringResource(R.string.order_id, order.orderId)}"
-                else -> stringResource(R.string.order_current)
-            },
-            modifier = Modifier.semantics { heading() },
-        )
+        Tag(text = orderLabel(order), modifier = Modifier.semantics { heading() })
         if (order.customerName.isNotBlank()) {
             Text(order.customerName, style = MaterialTheme.typography.titleLarge, color = colors.ink)
         }
@@ -95,20 +91,10 @@ fun ActiveOrderCard(
             )
         }
         if (!order.isDemo) {
-            val notFound = !locatingDrop && order.drop == DropLocation.NotFound
+            val notFound = dropNotFound(order, locatingDrop)
             OrderDetail(
                 icon = if (notFound) R.drawable.ic_error else R.drawable.ic_info,
-                text = stringResource(
-                    when {
-                        locatingDrop -> R.string.order_drop_locating
-                        order.dropAddress.isBlank() -> R.string.order_drop_no_address
-                        else -> when (val drop = order.drop) {
-                            is DropLocation.Found -> if (drop.approximate) R.string.order_drop_approximate else R.string.order_drop_found
-                            DropLocation.NotFound -> R.string.order_drop_not_found
-                            DropLocation.Unchecked -> R.string.order_drop_unchecked
-                        }
-                    }
-                ),
+                text = stringResource(dropNote(order, locatingDrop)),
                 color = if (notFound) colors.danger else colors.inkSecondary,
             )
         }
@@ -119,11 +105,43 @@ fun ActiveOrderCard(
         ) {
             PillButton(stringResource(R.string.order_scan_gallery), onScanScreenshot, icon = R.drawable.ic_photo_library, container = colors.surfaceHigh, content = colors.ink, minHeight = 48.dp)
             PillButton(stringResource(R.string.order_scan_camera), onScanCamera, icon = R.drawable.ic_photo_camera, container = colors.surfaceHigh, content = colors.ink, minHeight = 48.dp)
-            if (!order.isDemo) TextButton(onClick = onUseDemo, modifier = Modifier.heightIn(min = 48.dp)) { Text(stringResource(R.string.order_use_demo)) }
+            if (!order.isDemo) {
+                TextButton(onClick = onUseDemo, modifier = Modifier.heightIn(min = 48.dp)) { Text(stringResource(R.string.order_use_demo)) }
+            } else if (setAside != null) {
+                TextButton(onClick = onRestore, modifier = Modifier.heightIn(min = 48.dp)) { Text(backToOrderLabel(setAside)) }
+            }
         }
         Text(stringResource(R.string.order_share_hint), style = MaterialTheme.typography.bodySmall, color = colors.inkSecondary)
     }
 }
+
+/** "Current order", "Current order · #123" or "Demo order (sample)". */
+@Composable
+fun orderLabel(order: Order): String = when {
+    order.isDemo -> stringResource(R.string.order_demo)
+    order.orderId.isNotBlank() -> "${stringResource(R.string.order_current)} · ${stringResource(R.string.order_id, order.orderId)}"
+    else -> stringResource(R.string.order_current)
+}
+
+/** The demo card's way back to the scanned order: "Back to Kavita Rao's order". */
+@Composable
+fun backToOrderLabel(order: Order): String =
+    if (order.customerName.isBlank()) stringResource(R.string.order_back_to_scanned) else stringResource(R.string.order_back_to, order.customerName)
+
+/** What the rider should know about the drop's place on the map (a scanned order only). */
+@StringRes
+fun dropNote(order: Order, locatingDrop: Boolean): Int = when {
+    locatingDrop -> R.string.order_drop_locating
+    order.dropAddress.isBlank() -> R.string.order_drop_no_address
+    else -> when (val drop = order.drop) {
+        is DropLocation.Found -> if (drop.approximate) R.string.order_drop_approximate else R.string.order_drop_found
+        DropLocation.NotFound -> R.string.order_drop_not_found
+        DropLocation.Unchecked -> R.string.order_drop_unchecked
+    }
+}
+
+/** The drop couldn't be placed at all: ETA won't work for this order. */
+fun dropNotFound(order: Order, locatingDrop: Boolean): Boolean = !locatingDrop && order.drop == DropLocation.NotFound
 
 @Composable
 private fun OrderDetail(@DrawableRes icon: Int, text: String, color: Color = Pillion.colors.inkSecondary, description: String? = null) {

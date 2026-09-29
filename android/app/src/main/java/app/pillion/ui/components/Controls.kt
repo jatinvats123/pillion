@@ -3,6 +3,12 @@ package app.pillion.ui.components
 import androidx.annotation.DrawableRes
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.unit.sp
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -37,7 +43,10 @@ import app.pillion.R
 import app.pillion.ui.theme.Pillion
 import app.pillion.ui.theme.Space
 
-/** Small round grey button with one icon (settings, order, debug). */
+/**
+ * Small round button with one icon (settings, back, order, debug): a glass circle like the ride
+ * screen's, or a solid [container] where one is given.
+ */
 @Composable
 fun RoundIconButton(
     @DrawableRes icon: Int,
@@ -45,21 +54,26 @@ fun RoundIconButton(
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
     size: Dp = 48.dp,
-    container: Color = Pillion.colors.surfaceHigh,
+    container: Color? = null,
     content: Color = Pillion.colors.ink,
     enabled: Boolean = true,
 ) {
-    Surface(
-        onClick = onClick,
-        enabled = enabled,
-        shape = CircleShape,
-        color = container,
-        contentColor = content,
-        modifier = modifier.size(size),
+    val colors = Pillion.colors
+    Box(
+        contentAlignment = Alignment.Center,
+        modifier = modifier
+            .size(size)
+            .then(if (container == null) Modifier.glass(colors, CircleShape) else Modifier.background(container, CircleShape))
+            .clip(CircleShape)
+            .clickable(enabled = enabled, role = Role.Button, onClick = onClick)
+            .semantics { this.contentDescription = contentDescription },
     ) {
-        Box(contentAlignment = Alignment.Center) {
-            Icon(painterResource(icon), contentDescription = contentDescription, modifier = Modifier.size(if (size >= 72.dp) 32.dp else 24.dp))
-        }
+        Icon(
+            painterResource(icon),
+            contentDescription = null,
+            tint = if (enabled) content else content.copy(alpha = 0.38f),
+            modifier = Modifier.size(if (size >= 72.dp) 32.dp else 22.dp),
+        )
     }
 }
 
@@ -132,20 +146,21 @@ fun SectionTitle(text: String, modifier: Modifier = Modifier) {
     )
 }
 
-/** The one pill chip: a coloured dot and a word. TalkBack reads each change. */
+/** The one pill chip (the ride screen's glass pill): a coloured dot and a word. TalkBack reads each change. */
 @Composable
 fun StatusPill(label: String, dot: Color, modifier: Modifier = Modifier) {
+    val colors = Pillion.colors
     Row(
         modifier = modifier
-            .heightIn(min = 48.dp)
-            .background(Pillion.colors.surfaceHigh, CircleShape)
-            .padding(horizontal = 18.dp, vertical = 10.dp)
+            .heightIn(min = 36.dp)
+            .glass(colors, RoundedCornerShape(18.dp))
+            .padding(horizontal = 14.dp, vertical = 6.dp)
             .semantics(mergeDescendants = true) { liveRegion = LiveRegionMode.Polite },
         verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(10.dp),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
     ) {
-        Box(Modifier.size(12.dp).background(dot, CircleShape))
-        Text(label, style = MaterialTheme.typography.titleMedium, color = Pillion.colors.ink)
+        Box(Modifier.size(8.dp).background(dot, CircleShape))
+        Text(label, style = MaterialTheme.typography.labelLarge.copy(fontSize = 15.sp), color = colors.ink)
     }
 }
 
@@ -163,8 +178,9 @@ fun Tag(text: String, modifier: Modifier = Modifier) {
 }
 
 /**
- * Cards: 28 dp corners, a hairline edge in the light theme instead of a shadow. With [onClick]
- * the whole card is the target, and its press/focus feedback follows the rounded shape.
+ * Cards: the design's glass panel (translucent fill, 1 dp edge, 24 dp corners; a soft shadow in
+ * the light theme). With [onClick] the whole card is the target, and its press feedback follows
+ * the rounded shape.
  */
 @Composable
 fun PillionCard(
@@ -174,26 +190,21 @@ fun PillionCard(
     content: @Composable ColumnScope.() -> Unit,
 ) {
     val colors = Pillion.colors
-    val shape = MaterialTheme.shapes.large
-    val border = if (colors.isDark) null else BorderStroke(1.dp, colors.hairline)
-    val body = @Composable {
-        Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(Space.s), content = content)
-    }
-    if (onClick == null) {
-        Surface(shape = shape, color = colors.surface, border = border, modifier = modifier.fillMaxWidth(), content = body)
-    } else {
-        Surface(
-            onClick = onClick,
-            shape = shape,
-            color = colors.surface,
-            border = border,
-            modifier = modifier
-                .fillMaxWidth()
-                .semantics { onClickLabel?.let { onClick(label = it) { onClick(); true } } },
-            content = body,
-        )
-    }
+    val shape = CardShape
+    Column(
+        modifier
+            .fillMaxWidth()
+            .glass(colors, shape)
+            .clip(shape)
+            .then(if (onClick != null) Modifier.clickable(onClickLabel = onClickLabel, onClick = onClick) else Modifier)
+            .padding(20.dp),
+        verticalArrangement = Arrangement.spacedBy(Space.s),
+        content = content,
+    )
 }
+
+/** The design's panel corners (`.drop`: 24 px). */
+val CardShape = RoundedCornerShape(24.dp)
 
 /**
  * Something the rider should know or fix: an icon, a title, a line of detail, and actions. Red

@@ -23,7 +23,6 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -112,21 +111,49 @@ import app.pillion.order.loadOrderImage
 import app.pillion.pillion
 import app.pillion.safety.SafetyState
 import app.pillion.ui.components.NoticeCard
-import app.pillion.ui.components.Orb
-import app.pillion.ui.components.OrbMood
 import app.pillion.ui.components.PillButton
 import app.pillion.ui.components.PillionCard
-import app.pillion.ui.components.RoundIconButton
-import app.pillion.ui.components.StatusPill
-import app.pillion.ui.components.dotColor
-import app.pillion.ui.components.orbBackdrop
-import app.pillion.ui.components.rememberOrbColor
 import app.pillion.ui.theme.Pillion
 import app.pillion.ui.theme.RideType
 import app.pillion.ui.theme.Space
 import app.pillion.ui.theme.Targets
 import app.pillion.voice.Speaker
 import app.pillion.voice.TranscriptLine
+import androidx.annotation.DrawableRes
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.CubicBezierEasing
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
+import androidx.compose.runtime.produceState
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.liveRegion
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.sp
+import app.pillion.data.ThemeMode
+import app.pillion.ui.components.GlassGlobe
+import app.pillion.ui.components.GlobeLevel
+import app.pillion.ui.components.cssShadows
+import app.pillion.ui.components.glass
+import app.pillion.ui.components.pillionBackground
+import app.pillion.ui.components.rememberGlobeLevel
+import app.pillion.ui.theme.CssShadow
+import app.pillion.ui.theme.MicGradientEnd
+import app.pillion.ui.theme.MicGradientStart
+import app.pillion.ui.theme.MicRing
+import app.pillion.ui.theme.Motion
+import app.pillion.ui.theme.SosCenter
+import app.pillion.ui.theme.SosEdge
+import app.pillion.ui.theme.SosMid
+import app.pillion.ui.theme.SosShadow
+import kotlinx.coroutines.delay
 import java.text.NumberFormat
 import java.util.Locale
 
@@ -145,6 +172,7 @@ fun RideRoute(
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     val order by viewModel.order.collectAsStateWithLifecycle()
+    val setAsideOrder by viewModel.setAsideOrder.collectAsStateWithLifecycle()
     val scanState by viewModel.scanState.collectAsStateWithLifecycle()
     val locatingDrop by viewModel.locatingDrop.collectAsStateWithLifecycle()
     val stopToScan by viewModel.stopToScan.collectAsStateWithLifecycle()
@@ -159,11 +187,11 @@ fun RideRoute(
     val tripSummary by viewModel.tripSummary.collectAsStateWithLifecycle()
     // Read by the orb at draw time only: ten level updates a second don't recompose the screen.
     val riderLevel = viewModel.riderLevel.collectAsStateWithLifecycle()
-    val agentLevel = viewModel.agentLevel.collectAsStateWithLifecycle()
+    val voiceState by viewModel.voiceState.collectAsStateWithLifecycle()
+    val voicePreview by viewModel.voicePreview.collectAsStateWithLifecycle()
     val context = LocalContext.current
     val activity = LocalActivity.current
     var micPrompt by rememberSaveable { mutableStateOf(MicPrompt.None) }
-    var setupDismissed by rememberSaveable { mutableStateOf(false) }
     var cameraRefused by rememberSaveable { mutableStateOf(false) }
 
     // Order scan: a screenshot from the system photo picker (no storage permission), or the camera.
@@ -309,39 +337,43 @@ fun RideRoute(
         }
     }
 
+    val uiPrefs = context.pillion.uiPrefs
+    val dark = Pillion.colors.isDark
+    val onScanScreenshot = {
+        if (viewModel.scanAllowed()) pickScreenshot.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
+    }
+    val onScanCamera = {
+        if (viewModel.scanAllowed()) {
+            if (context.granted(Manifest.permission.CAMERA)) onOpenCamera() else cameraPermissionLauncher.launch(Manifest.permission.CAMERA)
+        }
+    }
     RideScreen(
         state = state,
+        voiceState = voiceState,
+        previewing = voicePreview != null,
         safetyState = safetyState,
         riderName = riderName,
         today = today,
+        order = order,
+        rideStartedAt = viewModel.rideStartedAt,
         muted = muted,
         riderLevel = riderLevel,
-        agentLevel = agentLevel,
         subtitles = if (subtitlesOn) subtitles else emptyMap(),
         tripSummary = tripSummary,
         onDoneSummary = viewModel::dismissTripSummary,
         notices = notices,
-        // The idle screen shows it as a card; during a ride only its chip in the conversation opens it.
+        // Home: its "N things to fix" pill opens it in a sheet; during a ride the chip in the conversation does.
         setupCard = if (setupIssues.isEmpty()) {
             null
         } else {
-            { open -> SetupCard(setupIssues, onFixSetup, initiallyOpen = open, onDismiss = if (open) null else ({ setupDismissed = true })) }
+            { open -> SetupCard(setupIssues, onFixSetup, initiallyOpen = open, onDismiss = null) }
         },
-        setupDismissed = setupDismissed,
+        setupIssueCount = setupIssues.size,
         orderCard = {
-            ActiveOrderCard(
-                order = order,
-                locatingDrop = locatingDrop,
-                onScanScreenshot = {
-                    if (viewModel.scanAllowed()) pickScreenshot.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
-                },
-                onScanCamera = {
-                    if (viewModel.scanAllowed()) {
-                        if (context.granted(Manifest.permission.CAMERA)) onOpenCamera() else cameraPermissionLauncher.launch(Manifest.permission.CAMERA)
-                    }
-                },
-                onUseDemo = viewModel::useDemoOrder,
-            )
+            ActiveOrderCard(order = order, locatingDrop = locatingDrop, onScanScreenshot = onScanScreenshot, onScanCamera = onScanCamera, onUseDemo = viewModel::useDemoOrder, setAside = setAsideOrder, onRestore = viewModel::backToScannedOrder)
+        },
+        homeOrderCard = {
+            HomeOrderCard(order = order, locatingDrop = locatingDrop, onScanScreenshot = onScanScreenshot, onScanCamera = onScanCamera, onUseDemo = viewModel::useDemoOrder, setAside = setAsideOrder, onRestore = viewModel::backToScannedOrder)
         },
         scanPanel = if (scanState == ScanState.Idle) {
             null
@@ -379,6 +411,7 @@ fun RideRoute(
         onOpenAlert = { SafetyAlertActivity.launch(context) },
         onRetryVoice = viewModel::retryVoice,
         onToggleMute = { viewModel.setMicMuted(!muted) },
+        onToggleTheme = { uiPrefs.setThemeMode(if (dark) ThemeMode.Light else ThemeMode.Dark) },
         onOpenSettings = onOpenSettings,
     )
 }
@@ -388,12 +421,16 @@ private enum class Sheet { None, Transcript, Order, Debug, Setup }
 @Composable
 private fun RideScreen(
     state: RideUiState,
+    voiceState: RideVoiceState,
+    /** Debug: a voice state is being previewed (listening then uses the design's demo voice). */
+    previewing: Boolean,
     safetyState: SafetyState,
     riderName: String,
     today: EarningsDb.DayTotal?,
+    order: Order,
+    rideStartedAt: Long,
     muted: Boolean,
     riderLevel: State<Float>,
-    agentLevel: State<Float>,
     /** English for Hindi lines, by line text (empty when subtitles are off). */
     subtitles: Map<String, String>,
     tripSummary: TripSummary?,
@@ -401,8 +438,11 @@ private fun RideScreen(
     notices: List<@Composable () -> Unit>,
     /** What keeps safety from working fully; null when all is set up. Its argument: shown open. */
     setupCard: (@Composable (Boolean) -> Unit)?,
-    setupDismissed: Boolean,
+    setupIssueCount: Int,
+    /** The order card in a sheet (during a ride). */
     orderCard: @Composable () -> Unit,
+    /** The order card on the home screen. */
+    homeOrderCard: @Composable () -> Unit,
     /** Set while an order is read or checked: it takes the main area's place. */
     scanPanel: (@Composable (Modifier) -> Unit)?,
     debugTools: (@Composable () -> Unit)?,
@@ -412,53 +452,107 @@ private fun RideScreen(
     onOpenAlert: () -> Unit,
     onRetryVoice: () -> Unit,
     onToggleMute: () -> Unit,
+    onToggleTheme: () -> Unit,
     onOpenSettings: () -> Unit,
 ) {
     val colors = Pillion.colors
     val alertOn = safetyState != SafetyState.Idle
     // Ending keeps the ride layout ("Ending…") until the ride is really over.
     val inRide = state.rideActive || state.status == RideStatus.Ending
-    val status = rideStatusOf(state.status, alertOn, muted, inRide)
-    val orbColor = rememberOrbColor(status.mood)
+    val status = rideStatusOf(if (previewing) RideStatus.Listening else state.status, voiceState, alertOn, muted, inRide)
+    val globeLevel = rememberGlobeLevel()
     var sheet by remember { mutableStateOf(Sheet.None) }
     LaunchedEffect(scanPanel != null) { if (scanPanel != null) sheet = Sheet.None }
 
-    Box(
+    val icons = @Composable {
+        GlassIconButton(
+            if (colors.isDark) R.drawable.ic_light_mode else R.drawable.ic_dark_mode,
+            stringResource(if (colors.isDark) R.string.theme_to_light else R.string.theme_to_dark),
+            onToggleTheme,
+        )
+        if (inRide) GlassIconButton(R.drawable.ic_document_scanner, stringResource(R.string.scan_order_button), onClick = { sheet = Sheet.Order })
+        if (debugTools != null) GlassIconButton(R.drawable.ic_bug_report, stringResource(R.string.debug_tools), onClick = { sheet = Sheet.Debug })
+        GlassIconButton(R.drawable.ic_settings, stringResource(R.string.settings), onClick = onOpenSettings)
+    }
+
+    // Home (the Ride tab before a ride): its own design; MainActivity paints its page behind it.
+    val home = !inRide && scanPanel == null && tripSummary == null
+    if (home) {
+        HomeScreen(
+            riderName = riderName,
+            today = today,
+            setupIssueCount = setupIssueCount,
+            onOpenSetup = { sheet = Sheet.Setup },
+            alertBanner = if (alertOn) ({ AlertBanner(onOpenAlert) }) else null,
+            notices = notices,
+            orderCard = homeOrderCard,
+            sosEnabled = !alertOn,
+            onSos = onSos,
+            onStartRide = onStartRide,
+            onToggleTheme = onToggleTheme,
+            onOpenDebug = if (debugTools != null) ({ sheet = Sheet.Debug }) else null,
+            onOpenSettings = onOpenSettings,
+        )
+    } else if (!inRide && scanPanel == null && tripSummary != null) {
+        // Ride done: its own design, sharing home's header, cards and page.
+        RideDoneScreen(
+            summary = tripSummary,
+            sosEnabled = !alertOn,
+            onSos = onSos,
+            onDone = onDoneSummary,
+            onToggleTheme = onToggleTheme,
+            onOpenDebug = if (debugTools != null) ({ sheet = Sheet.Debug }) else null,
+            onOpenSettings = onOpenSettings,
+        )
+    } else Box(
         Modifier
             .fillMaxSize()
-            .background(colors.background)
-            .orbBackdrop({ orbColor.value }, colors.isDark, centerY = if (inRide) 0.32f else 0.3f)
+            .pillionBackground(colors)
             .safeDrawingPadding(),
     ) {
         Column(Modifier.fillMaxSize()) {
-            TopBar {
-                if (inRide) {
-                    StatusPill(stringResource(status.label), status.mood.dotColor())
-                } else {
-                    Wordmark()
+            val gutter = Modifier.padding(horizontal = Space.gutter)
+            if (inRide) {
+                Row(gutter.padding(top = 20.dp).fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                    VoicePill(status)
+                    Box(Modifier.weight(1f))
+                    RideClock(rideStartedAt)
                 }
-                Box(Modifier.weight(1f))
-                if (inRide) RoundIconButton(R.drawable.ic_document_scanner, stringResource(R.string.scan_order_button), onClick = { sheet = Sheet.Order })
-                if (debugTools != null) RoundIconButton(R.drawable.ic_bug_report, stringResource(R.string.debug_tools), onClick = { sheet = Sheet.Debug })
-                RoundIconButton(R.drawable.ic_settings, stringResource(R.string.settings), onClick = onOpenSettings)
+            } else {
+                Row(
+                    Modifier.padding(start = Space.gutter, end = Space.gutter, top = Space.m).fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(Space.s),
+                ) {
+                    Wordmark()
+                    Box(Modifier.weight(1f))
+                    icons()
+                }
             }
 
-            val gutter = Modifier.padding(horizontal = Space.gutter)
             when {
-                scanPanel != null -> scanPanel(Modifier.weight(1f).then(gutter))
-                inRide -> {
-                    Orb(
-                        mood = status.mood,
-                        level = {
-                            when (status.mood) {
-                                OrbMood.Listening -> riderLevel.value
-                                OrbMood.Speaking -> agentLevel.value
-                                else -> 0f
-                            }
-                        },
-                        description = stringResource(status.orbDescription),
-                        modifier = Modifier.fillMaxWidth().weight(0.9f),
-                    )
+                scanPanel != null -> scanPanel(Modifier.weight(1f).then(gutter).padding(top = Space.m))
+                inRide -> Column(Modifier.weight(1f)) {
+                    // The globe takes the height the lines and cards leave, up to the design's 262 dp;
+                    // the icons stand in a column under the timer, beside it.
+                    Box(Modifier.padding(top = 18.dp).fillMaxWidth().weight(1f, fill = false).heightIn(max = 262.dp)) {
+                        GlassGlobe(
+                            state = voiceState,
+                            micLevel = if (previewing) null else ({ riderLevel.value }),
+                            description = stringResource(status.orbDescription),
+                            level = globeLevel,
+                            modifier = Modifier.fillMaxSize(),
+                        )
+                        // Room inside the scrolling column for the icons' soft shadows (it clips at its edges).
+                        Column(
+                            Modifier
+                                .align(Alignment.TopEnd)
+                                .padding(end = Space.gutter - ShadowRoom)
+                                .verticalScroll(rememberScrollState())
+                                .padding(start = ShadowRoom, end = ShadowRoom, bottom = ShadowRoom + 12.dp),
+                            verticalArrangement = Arrangement.spacedBy(10.dp),
+                        ) { icons() }
+                    }
                     Column(gutter, verticalArrangement = Arrangement.spacedBy(Space.m)) {
                         if (alertOn) AlertBanner(onOpenAlert)
                         if (notices.isNotEmpty()) {
@@ -469,74 +563,33 @@ private fun RideScreen(
                         }
                     }
                     val problem = state.voiceProblem
-                    if (problem != null) {
-                        VoiceOfflinePanel(problem, onRetryVoice, Modifier.weight(1f).then(gutter))
+                    if (problem != null && !previewing) {
+                        VoiceOfflinePanel(problem, onRetryVoice, gutter.padding(top = 6.dp))
                     } else {
-                        LiveTranscript(
+                        SayBlock(
                             lines = state.transcript,
                             subtitles = subtitles,
                             onExpand = { sheet = Sheet.Transcript },
                             onSetupChip = if (setupCard != null) ({ sheet = Sheet.Setup }) else null,
-                            modifier = Modifier.weight(1f).then(gutter),
+                            modifier = gutter.padding(top = 6.dp),
                         )
                     }
-                }
-                tripSummary != null -> Box(Modifier.weight(1f)) {
-                    TripSummaryContent(
-                        tripSummary,
-                        Modifier
-                            .verticalScroll(rememberScrollState())
-                            .then(gutter)
-                            .padding(bottom = Space.xl),
-                    )
-                    BottomFade(Modifier.align(Alignment.BottomCenter))
-                }
-                else -> BoxWithConstraints(Modifier.weight(1f)) {
-                    val viewport = maxHeight
-                    Column(
-                        Modifier
-                            .verticalScroll(rememberScrollState())
-                            .heightIn(min = viewport)
-                            .then(gutter)
-                            .padding(bottom = Space.xl),
-                        verticalArrangement = Arrangement.spacedBy(Space.m),
-                    ) {
-                        Greeting(riderName, today)
-                        if (alertOn) AlertBanner(onOpenAlert)
-                        // The orb takes the height that's left (up to 200 dp) and steps aside when
-                        // cards need the room, so the order card is never cut off.
-                        BoxWithConstraints(Modifier.fillMaxWidth().weight(1f).heightIn(max = 200.dp)) {
-                            if (maxHeight >= 96.dp) {
-                                Orb(
-                                    mood = OrbMood.Dormant,
-                                    level = { 0f },
-                                    description = stringResource(R.string.orb_dormant),
-                                    modifier = Modifier.fillMaxSize(),
-                                )
-                            }
-                        }
-                        notices.forEach { it() }
-                        if (!setupDismissed) setupCard?.invoke(false)
-                        orderCard()
-                    }
-                    BottomFade(Modifier.align(Alignment.BottomCenter))
+                    NextDropCard(order, state.transcript, onClick = { sheet = Sheet.Order }, modifier = gutter.padding(top = 20.dp))
                 }
             }
 
             // Checking a scanned order before a ride: its own Cancel / Set buttons are the actions
             // (SOS is back as soon as it closes). During a ride End Ride and SOS always stay.
-            if (scanPanel == null || inRide) RideControls(
-                inRide = inRide,
-                summaryShown = tripSummary != null && !inRide && scanPanel == null,
+            if (inRide) RideControls(
                 ending = state.status == RideStatus.Ending,
                 alertOn = alertOn,
                 muted = muted,
-                onDoneSummary = onDoneSummary,
-                onStartRide = onStartRide,
+                listening = voiceState == RideVoiceState.Listening,
+                globeLevel = globeLevel,
                 onEndRide = onEndRide,
                 onSos = onSos,
                 onToggleMute = onToggleMute,
-                modifier = Modifier.padding(start = Space.gutter, end = Space.gutter, top = Space.m, bottom = Space.l),
+                modifier = Modifier.padding(start = Space.gutter, end = Space.gutter, top = Space.l, bottom = 28.dp),
             )
         }
     }
@@ -555,82 +608,118 @@ private fun RideScreen(
     }
 }
 
-/** Content slides softly under the ride buttons instead of being cut off. */
-@Composable
-private fun BottomFade(modifier: Modifier = Modifier) {
-    val background = Pillion.colors.background
-    Box(
-        modifier
-            .fillMaxWidth()
-            .height(Space.xl)
-            .background(Brush.verticalGradient(listOf(Color.Transparent, background))),
-    )
+/** The status pill's word and dot, and the globe's spoken description, from the ride and voice state. */
+private data class ShownStatus(@StringRes val label: Int, val dot: Dot, @StringRes val orbDescription: Int)
+
+private enum class Dot { Idle, Listening, Thinking, Speaking, Alert }
+
+private fun rideStatusOf(status: RideStatus, voice: RideVoiceState, alertOn: Boolean, muted: Boolean, inRide: Boolean): ShownStatus = when {
+    !inRide -> ShownStatus(R.string.status_idle, Dot.Idle, R.string.orb_dormant)
+    alertOn -> ShownStatus(R.string.status_alert, Dot.Alert, R.string.orb_alert)
+    status == RideStatus.VoiceOffline -> ShownStatus(R.string.status_voice_offline, Dot.Idle, R.string.orb_offline)
+    status == RideStatus.Reconnecting -> ShownStatus(R.string.status_reconnecting, Dot.Idle, R.string.orb_offline)
+    status == RideStatus.Connecting -> ShownStatus(R.string.status_connecting, Dot.Idle, R.string.orb_connecting)
+    status == RideStatus.Ending -> ShownStatus(R.string.ending_ride, Dot.Idle, R.string.orb_offline)
+    status == RideStatus.FamilyOnLine -> ShownStatus(R.string.status_family, Dot.Idle, R.string.orb_family)
+    voice == RideVoiceState.Thinking -> ShownStatus(R.string.status_thinking, Dot.Thinking, R.string.orb_thinking)
+    voice == RideVoiceState.Speaking -> ShownStatus(R.string.status_speaking, Dot.Speaking, R.string.orb_speaking)
+    muted -> ShownStatus(R.string.status_mic_off, Dot.Idle, R.string.orb_muted)
+    voice == RideVoiceState.Listening -> ShownStatus(R.string.status_listening, Dot.Listening, R.string.orb_listening)
+    else -> ShownStatus(R.string.status_ready, Dot.Idle, R.string.orb_ready)
 }
 
-/** The status pill's word, the orb's mood and the orb's spoken description, from the ride state. */
-private data class ShownStatus(@StringRes val label: Int, val mood: OrbMood, @StringRes val orbDescription: Int)
-
-private fun rideStatusOf(status: RideStatus, alertOn: Boolean, muted: Boolean, inRide: Boolean): ShownStatus = when {
-    !inRide -> ShownStatus(R.string.status_idle, OrbMood.Dormant, R.string.orb_dormant)
-    alertOn -> ShownStatus(R.string.status_alert, OrbMood.Alert, R.string.orb_alert)
-    status == RideStatus.VoiceOffline -> ShownStatus(R.string.status_voice_offline, OrbMood.Offline, R.string.orb_offline)
-    status == RideStatus.Reconnecting -> ShownStatus(R.string.status_reconnecting, OrbMood.Offline, R.string.orb_offline)
-    status == RideStatus.Connecting -> ShownStatus(R.string.status_connecting, OrbMood.Connecting, R.string.orb_connecting)
-    status == RideStatus.Ending -> ShownStatus(R.string.ending_ride, OrbMood.Offline, R.string.orb_offline)
-    status == RideStatus.Thinking -> ShownStatus(R.string.status_thinking, OrbMood.Thinking, R.string.orb_thinking)
-    status == RideStatus.Speaking -> ShownStatus(R.string.status_speaking, OrbMood.Speaking, R.string.orb_speaking)
-    status == RideStatus.FamilyOnLine -> ShownStatus(R.string.status_family, OrbMood.Listening, R.string.orb_family)
-    muted -> ShownStatus(R.string.status_mic_off, OrbMood.Offline, R.string.orb_muted)
-    else -> ShownStatus(R.string.status_listening, OrbMood.Listening, R.string.orb_listening)
-}
-
+/**
+ * The design's status pill (`.pill` + `.v7-dot`): glass, 36 dp, a glowing 8 dp dot and the word.
+ * Listening breathes the dot (opacity 0.45 ↔ 1, 1 s). TalkBack reads each change.
+ */
 @Composable
-private fun TopBar(content: @Composable RowScope.() -> Unit) {
+private fun VoicePill(status: ShownStatus) {
+    val colors = Pillion.colors
+    val (dot, glow) = when (status.dot) {
+        Dot.Idle -> colors.dotIdle to null
+        Dot.Listening -> colors.dotListening to CssShadow(colors.dotListeningGlow, 0f, 10f)
+        Dot.Thinking -> colors.dotThinking to CssShadow(colors.dotThinkingGlow, 0f, 10f)
+        Dot.Speaking -> colors.dotSpeaking to colors.dotSpeakingGlow
+        Dot.Alert -> colors.alert to null
+    }
+    val dotColor by animateColorAsState(dot, Motion.color(Pillion.reducedMotion), label = "pillDot")
+    val breathing = status.dot == Dot.Listening && !Pillion.reducedMotion
+    val alpha = if (breathing) {
+        rememberInfiniteTransition(label = "pillDot").animateFloat(
+            initialValue = 0.45f,
+            targetValue = 1f,
+            animationSpec = infiniteRepeatable(tween(1000, easing = CubicBezierEasing(0.42f, 0f, 0.58f, 1f)), RepeatMode.Reverse),
+            label = "pillDotAlpha",
+        )
+    } else {
+        null
+    }
+    val shape = RoundedCornerShape(18.dp)
     Row(
         modifier = Modifier
-            .fillMaxWidth()
-            .padding(start = Space.gutter, end = Space.m, top = Space.s, bottom = Space.s),
+            .height(36.dp)
+            .glass(colors, shape)
+            .padding(horizontal = 14.dp)
+            .semantics(mergeDescendants = true) { liveRegion = LiveRegionMode.Polite },
         verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(Space.s),
-        content = content,
-    )
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        Box(
+            Modifier
+                .size(8.dp)
+                .graphicsLayer { this.alpha = alpha?.value ?: 1f }
+                .cssShadows(CircleShape, listOfNotNull(glow))
+                .background(dotColor, CircleShape),
+        )
+        Text(stringResource(status.label), style = RideType.pill, color = colors.ink, maxLines = 1)
+    }
+}
+
+/** Time on this ride ("42:18", past an hour "1:42:18") over "on ride". */
+@Composable
+private fun RideClock(startedAt: Long) {
+    val colors = Pillion.colors
+    val now by produceState(System.currentTimeMillis(), startedAt) {
+        while (true) {
+            value = System.currentTimeMillis()
+            delay(1_000 - value % 1_000)
+        }
+    }
+    val seconds = ((now - startedAt) / 1_000).coerceAtLeast(0)
+    val text = if (seconds >= 3_600) {
+        "%d:%02d:%02d".format(seconds / 3_600, seconds / 60 % 60, seconds % 60)
+    } else {
+        "%02d:%02d".format(seconds / 60, seconds % 60)
+    }
+    val description = pluralStringResource(R.plurals.ride_time_description, (seconds / 60).toInt(), (seconds / 60).toInt())
+    Column(horizontalAlignment = Alignment.End, modifier = Modifier.clearAndSetSemantics { contentDescription = description }) {
+        Text(text, style = RideType.figure, color = colors.ink)
+        Text(stringResource(R.string.on_ride), style = RideType.caption.copy(fontSize = 12.sp, lineHeight = 16.sp), color = colors.inkSecondary)
+    }
+}
+
+/** A 44 dp glass circle with a 22 dp icon (theme, scan order, debug, settings); Compose widens its touch area to 48 dp. */
+@Composable
+private fun GlassIconButton(@DrawableRes icon: Int, description: String, onClick: () -> Unit) {
+    val colors = Pillion.colors
+    Box(
+        contentAlignment = Alignment.Center,
+        modifier = Modifier
+            .size(44.dp)
+            .glass(colors, CircleShape)
+            .clip(CircleShape)
+            .clickable(role = Role.Button, onClick = onClick)
+            .semantics { contentDescription = description },
+    ) {
+        Icon(painterResource(icon), contentDescription = null, tint = colors.ink, modifier = Modifier.size(22.dp))
+    }
 }
 
 @Composable
 private fun Wordmark() {
     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-        Box(Modifier.size(14.dp).background(Pillion.colors.accent, CircleShape))
+        Box(Modifier.size(14.dp).background(Brush.linearGradient(listOf(MicGradientStart, MicGradientEnd)), CircleShape))
         Text(stringResource(R.string.app_name), style = MaterialTheme.typography.titleLarge, color = Pillion.colors.ink)
-    }
-}
-
-@Composable
-private fun Greeting(name: String, today: EarningsDb.DayTotal?) {
-    val colors = Pillion.colors
-    Column(Modifier.padding(top = Space.m), verticalArrangement = Arrangement.spacedBy(Space.xs)) {
-        Text(
-            text = if (name.isBlank()) stringResource(R.string.greeting_no_name) else stringResource(R.string.greeting, name.trim().substringBefore(' ')),
-            style = MaterialTheme.typography.headlineLarge,
-            color = colors.ink,
-            modifier = Modifier.semantics { heading() },
-        )
-        if (today != null) {
-            val trips = pluralStringResource(R.plurals.trips_count, today.trips, today.trips)
-            val amount = rupees(today.rupees)
-            val todayWord = stringResource(R.string.today_word)
-            Text(
-                text = if (today.trips == 0) {
-                    buildAnnotatedString { append(stringResource(R.string.today_none)) }
-                } else {
-                    buildAnnotatedString {
-                        withStyle(SpanStyle(color = colors.ink, fontWeight = FontWeight.SemiBold)) { append(amount) }
-                        append(" $todayWord · $trips")
-                    }
-                },
-                style = MaterialTheme.typography.titleMedium.merge(RideType.tabular).copy(fontWeight = FontWeight.Normal),
-                color = colors.inkSecondary,
-            )
-        }
     }
 }
 
@@ -653,11 +742,12 @@ private fun AlertBanner(onOpen: () -> Unit) {
 }
 
 /**
- * The last few lines, newest at the bottom and largest; older ones fade out at the top. Tap for
- * the whole conversation.
+ * The design's `.say` block: the line before (small, grey, "आप · …"), the newest line large, and
+ * under it the English subtitle of a Hindi line. Something Pillion did after that shows as a chip.
+ * Tap for the whole conversation.
  */
 @Composable
-private fun LiveTranscript(
+private fun SayBlock(
     lines: List<TranscriptLine>,
     subtitles: Map<String, String>,
     onExpand: () -> Unit,
@@ -665,94 +755,57 @@ private fun LiveTranscript(
     modifier: Modifier = Modifier,
 ) {
     val colors = Pillion.colors
-    val recent = lines.takeLast(4)
-    val newest = recent.indexOfLast { it.speaker != Speaker.Action }
-    Box(
+    val spoken = lines.filter { it.speaker != Speaker.Action }
+    val latest = spoken.lastOrNull()
+    val before = spoken.getOrNull(spoken.lastIndex - 1)
+    val action = lines.lastOrNull()?.takeIf { it.speaker == Speaker.Action }
+    // Pinned to the newest line; only when the lines don't fit does the top fade out.
+    val scroll = rememberScrollState()
+    Column(
         modifier
             .fillMaxWidth()
+            .heightIn(max = 240.dp)
             .clickable(onClickLabel = stringResource(R.string.transcript_expand), onClick = onExpand)
-            .fadeTopEdge(),
+            .fadeTopEdge { scroll.maxValue > 0 }
+            .verticalScroll(scroll, enabled = false, reverseScrolling = true),
+        verticalArrangement = Arrangement.spacedBy(10.dp),
     ) {
-        if (recent.isEmpty()) {
-            Text(
-                stringResource(R.string.transcript_listening_hint),
-                style = RideType.secondary,
-                color = colors.inkSecondary,
-                textAlign = TextAlign.Center,
-                modifier = Modifier.align(Alignment.Center),
-            )
+        if (latest == null) {
+            Text(stringResource(R.string.transcript_listening_hint), style = RideType.secondary, color = colors.inkSecondary)
         } else {
-            Column(
-                Modifier
-                    .align(Alignment.BottomCenter)
-                    .fillMaxWidth()
-                    .wrapContentHeight(Alignment.Bottom, unbounded = true)
-                    .padding(bottom = Space.s),
-                verticalArrangement = Arrangement.spacedBy(Space.m),
-                horizontalAlignment = Alignment.CenterHorizontally,
-            ) {
-                recent.forEachIndexed { index, line ->
-                    key(line.key) {
-                        if (line.speaker == Speaker.Action) {
-                            ActionChip(line, onClick = onSetupChip.takeIf { line.isSetupWarning() })
-                        } else {
-                            SpokenLine(line, subtitles[line.text], latest = index == newest)
-                        }
-                    }
+            if (before != null) key(before.key) {
+                Text(
+                    "${speakerName(before)} · ${before.text}",
+                    style = RideType.secondary,
+                    color = colors.inkSecondary,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.alpha(if (before.isFinal) 1f else 0.72f),
+                )
+            }
+            key(latest.key) {
+                val interrupted = if (latest.interrupted) " — ${stringResource(R.string.interrupted)}" else ""
+                val speaker = speakerName(latest)
+                Text(
+                    latest.text + interrupted,
+                    style = RideType.latest,
+                    color = colors.ink,
+                    modifier = Modifier
+                        .alpha(if (latest.isFinal) 1f else 0.72f)
+                        .semantics { contentDescription = "$speaker: ${latest.text}$interrupted" },
+                )
+                subtitles[latest.text]?.let { subtitle ->
+                    val subtitleDescription = stringResource(R.string.subtitle_description, subtitle)
+                    Text(
+                        subtitle,
+                        style = RideType.subtitle,
+                        color = colors.inkSecondary,
+                        modifier = Modifier.semantics { contentDescription = subtitleDescription },
+                    )
                 }
             }
         }
-    }
-}
-
-/** Clips to the box and fades the top 56 dp, so long lines slide out softly. */
-private fun Modifier.fadeTopEdge(): Modifier = this
-    .graphicsLayer {
-        compositingStrategy = CompositingStrategy.Offscreen
-        clip = true
-    }
-    .drawWithCache {
-        val fade = Brush.verticalGradient(0f to Color.Transparent, 1f to Color.Black, startY = 0f, endY = 56.dp.toPx())
-        onDrawWithContent {
-            drawContent()
-            drawRect(fade, blendMode = BlendMode.DstIn)
-        }
-    }
-
-/** A line, and under it its English subtitle when it's Hindi and the translation came back. */
-@Composable
-private fun SpokenLine(line: TranscriptLine, subtitle: String?, latest: Boolean) {
-    val colors = Pillion.colors
-    val rider = line.speaker == Speaker.Rider
-    Column(
-        Modifier
-            .fillMaxWidth()
-            .alpha(if (line.isFinal) 1f else 0.72f),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.spacedBy(Space.xs),
-    ) {
-        Text(
-            stringResource(if (rider) R.string.speaker_rider else R.string.speaker_pillion),
-            style = MaterialTheme.typography.labelMedium,
-            color = colors.inkSecondary,
-        )
-        val interrupted = if (line.interrupted) " — ${stringResource(R.string.interrupted)}" else ""
-        Text(
-            text = line.text + interrupted,
-            style = if (latest) RideType.latest else RideType.secondary,
-            color = if (latest) colors.ink else colors.inkSecondary,
-            textAlign = TextAlign.Center,
-        )
-        if (subtitle != null) {
-            val subtitleDescription = stringResource(R.string.subtitle_description, subtitle)
-            Text(
-                text = subtitle,
-                style = if (latest) RideType.secondary else MaterialTheme.typography.bodyLarge,
-                color = colors.inkSecondary,
-                textAlign = TextAlign.Center,
-                modifier = Modifier.semantics { contentDescription = subtitleDescription },
-            )
-        }
+        if (action != null) key(action.key) { ActionChip(action, onClick = onSetupChip.takeIf { action.isSetupWarning() }) }
     }
 }
 
@@ -760,8 +813,8 @@ private fun SpokenLine(line: TranscriptLine, subtitle: String?, latest: Boolean)
 private fun TranscriptLine.isSetupWarning() = speaker == Speaker.Action && text.startsWith("⚠ SOS not set up")
 
 /**
- * Something Pillion did ("✓ SMS sent to Rahul", "⚠ Crash detected"): a chip with a real icon, not
- * a speech line. With [onClick] (the "SOS not set up" line) it opens the safety setup fixes.
+ * Something Pillion did ("✓ SMS sent to Rahul", "⚠ Crash detected"): a glass chip with a real icon,
+ * not a speech line. With [onClick] (the "SOS not set up" line) it opens the safety setup fixes.
  */
 @Composable
 private fun ActionChip(line: TranscriptLine, onClick: (() -> Unit)? = null) {
@@ -777,8 +830,8 @@ private fun ActionChip(line: TranscriptLine, onClick: (() -> Unit)? = null) {
     val openLabel = stringResource(R.string.setup_open)
     Row(
         modifier = Modifier
+            .glass(colors, CircleShape)
             .clip(CircleShape)
-            .background(colors.surfaceHigh)
             .then(if (onClick != null) Modifier.clickable(onClickLabel = openLabel, role = Role.Button, onClick = onClick) else Modifier)
             .heightIn(min = if (onClick != null) 48.dp else 0.dp)
             .padding(horizontal = 14.dp, vertical = 8.dp),
@@ -793,186 +846,259 @@ private fun ActionChip(line: TranscriptLine, onClick: (() -> Unit)? = null) {
 }
 
 @Composable
+private fun speakerName(line: TranscriptLine): String = when {
+    line.speaker != Speaker.Rider -> stringResource(R.string.speaker_pillion)
+    line.text.any(::isDevanagari) -> stringResource(R.string.speaker_rider_hindi)
+    else -> stringResource(R.string.speaker_rider)
+}
+
+private fun isDevanagari(char: Char) = char in 'ऀ'..'ॿ'
+
+/** Clips to the box and, while [overflowing], fades the top 32 dp so long lines slide out softly. */
+private fun Modifier.fadeTopEdge(overflowing: () -> Boolean): Modifier = this
+    .graphicsLayer {
+        compositingStrategy = CompositingStrategy.Offscreen
+        clip = true
+    }
+    .drawWithCache {
+        val fade = Brush.verticalGradient(0f to Color.Transparent, 1f to Color.Black, startY = 0f, endY = 32.dp.toPx())
+        onDrawWithContent {
+            drawContent()
+            if (overflowing()) drawRect(fade, blendMode = BlendMode.DstIn)
+        }
+    }
+
+/**
+ * The design's next-drop panel (`.drop.glass`): who the drop is for and, once Pillion has worked
+ * out the route, its distance and minutes ("6.9 km · 25 min"); before that, the drop's area.
+ * Tap for the order.
+ */
+@Composable
+private fun NextDropCard(order: Order, lines: List<TranscriptLine>, onClick: () -> Unit, modifier: Modifier = Modifier) {
+    val colors = Pillion.colors
+    val route = remember(lines) {
+        lines.lastOrNull { it.speaker == Speaker.Action && !it.failed && NEXT_DROP in it.text }
+            ?.text?.substringAfter(NEXT_DROP)?.trim()
+    }
+    val shape = RoundedCornerShape(24.dp)
+    Row(
+        modifier
+            .fillMaxWidth()
+            .glass(colors, shape)
+            .clip(shape)
+            .clickable(onClickLabel = stringResource(R.string.order_open), onClick = onClick)
+            .padding(horizontal = 16.dp, vertical = 14.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(14.dp),
+    ) {
+        Box(Modifier.size(44.dp).background(colors.chipFill, CircleShape), contentAlignment = Alignment.Center) {
+            Icon(painterResource(R.drawable.ic_line_route), contentDescription = null, tint = colors.chipIcon, modifier = Modifier.size(22.dp))
+        }
+        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+            Text(stringResource(R.string.next_drop_for, order.customerName), style = RideType.caption, color = colors.inkSecondary, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text(route ?: order.dropArea, style = RideType.figure, color = colors.ink, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        }
+    }
+}
+
+private const val NEXT_DROP = "Next drop ·"
+
+/** Space for a glass panel's light-theme shadow (blur 30, 10 down) where a parent clips. */
+private val ShadowRoom = 20.dp
+
+@Composable
 private fun VoiceOfflinePanel(problem: String, onRetry: () -> Unit, modifier: Modifier = Modifier) {
     val colors = Pillion.colors
     Column(
-        modifier
-            .fillMaxWidth()
-            .verticalScroll(rememberScrollState()),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.spacedBy(Space.m, Alignment.CenterVertically),
+        modifier.fillMaxWidth(),
+        verticalArrangement = Arrangement.spacedBy(10.dp),
     ) {
-        Icon(painterResource(R.drawable.ic_cloud_off), contentDescription = null, tint = colors.inkSecondary, modifier = Modifier.size(32.dp))
-        Text(stringResource(R.string.voice_offline_title), style = MaterialTheme.typography.headlineSmall, color = colors.ink, textAlign = TextAlign.Center)
-        Text(stringResource(R.string.voice_offline_body, problem), style = MaterialTheme.typography.bodyLarge, color = colors.inkSecondary, textAlign = TextAlign.Center)
-        PillButton(
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(Space.s)) {
+            Icon(painterResource(R.drawable.ic_cloud_off), contentDescription = null, tint = colors.inkSecondary, modifier = Modifier.size(22.dp))
+            Text(stringResource(R.string.voice_offline_title), style = RideType.latest.copy(fontSize = 24.sp, lineHeight = 32.sp), color = colors.ink)
+        }
+        Text(stringResource(R.string.voice_offline_body, problem), style = RideType.subtitle, color = colors.inkSecondary)
+        GlassPill(
             text = stringResource(R.string.retry_voice),
             onClick = onRetry,
             icon = R.drawable.ic_refresh,
-            container = colors.surfaceHigh,
-            content = colors.ink,
-            minHeight = Targets.rideSmall,
-            style = RideType.control,
+            height = 56.dp,
         )
     }
 }
 
 /**
- * Start / End Ride, SOS (always there, works offline) and, during a ride, mute. Big targets with
- * wide gaps; at large font sizes the main button takes its own row.
+ * The design's control row during a ride: mic (mute), End ride, SOS (home and Ride done have their
+ * own). SOS is always there and works offline. At large font sizes the main button takes its own row.
  */
 @Composable
 private fun RideControls(
-    inRide: Boolean,
-    /** The trip summary is up: its Done takes Start Ride's place. */
-    summaryShown: Boolean,
     ending: Boolean,
     alertOn: Boolean,
     muted: Boolean,
-    onDoneSummary: () -> Unit,
-    onStartRide: () -> Unit,
+    listening: Boolean,
+    globeLevel: GlobeLevel,
     onEndRide: () -> Unit,
     onSos: () -> Unit,
     onToggleMute: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    val colors = Pillion.colors
     val haptics = LocalHapticFeedback.current
     val largeText = LocalDensity.current.fontScale > 1.3f
     val main = @Composable { buttonModifier: Modifier ->
-        if (summaryShown) {
-            PillButton(
-                text = stringResource(R.string.done),
-                onClick = onDoneSummary,
-                icon = R.drawable.ic_check,
-                container = colors.ink,
-                content = colors.background,
-                minHeight = Targets.ride,
-                style = RideType.control,
-                modifier = buttonModifier,
-            )
-        } else if (inRide) {
-            PillButton(
-                text = stringResource(if (ending) R.string.ending_ride else R.string.end_ride),
-                onClick = {
-                    haptics.performHapticFeedback(HapticFeedbackType.Confirm)
-                    onEndRide()
-                },
-                // No icon: it shares the row with SOS and mute, and the words must fit on one line.
-                // During a safety alert the rider answers it first.
-                enabled = !ending && !alertOn,
-                container = colors.ink,
-                content = colors.background,
-                minHeight = Targets.ride,
-                style = RideType.control,
-                horizontalPadding = Space.m,
-                modifier = buttonModifier,
-            )
-        } else {
-            PillButton(
-                text = stringResource(R.string.start_ride),
-                onClick = {
-                    haptics.performHapticFeedback(HapticFeedbackType.Confirm)
-                    onStartRide()
-                },
-                icon = R.drawable.ic_two_wheeler,
-                container = colors.accent,
-                content = colors.onAccent,
-                minHeight = Targets.ride,
-                style = RideType.control,
-                modifier = buttonModifier,
-            )
-        }
+        GlassPill(
+            text = stringResource(if (ending) R.string.ending_ride else R.string.end_ride),
+            onClick = {
+                haptics.performHapticFeedback(HapticFeedbackType.Confirm)
+                onEndRide()
+            },
+            // During a safety alert the rider answers it first.
+            enabled = !ending && !alertOn,
+            stopSquare = true,
+            modifier = buttonModifier,
+        )
     }
-    val secondary = @Composable {
-        SosButton(enabled = !alertOn, onClick = onSos)
-        if (inRide) MuteButton(muted = muted, enabled = !ending, onToggle = onToggleMute)
+    val mic = @Composable {
+        MicButton(muted = muted, listening = listening, level = globeLevel, enabled = !ending, onToggle = onToggleMute)
     }
+    val sos = @Composable { SosButton(enabled = !alertOn, onClick = onSos) }
     if (largeText) {
-        Column(modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(Targets.rideGap)) {
+        Column(modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(Space.m)) {
             main(Modifier.fillMaxWidth())
-            Row(horizontalArrangement = Arrangement.spacedBy(Targets.rideGap), verticalAlignment = Alignment.CenterVertically) { secondary() }
+            Row(horizontalArrangement = Arrangement.spacedBy(14.dp), verticalAlignment = Alignment.CenterVertically) {
+                mic()
+                sos()
+            }
         }
     } else {
         Row(
             modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(Targets.rideGap),
+            horizontalArrangement = Arrangement.spacedBy(14.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
+            mic()
             main(Modifier.weight(1f))
-            secondary()
-        }
-    }
-}
-
-/** Works with or without a ride, voice or internet: a 5-second cancel window, then SMS. */
-@Composable
-private fun SosButton(enabled: Boolean, onClick: () -> Unit) {
-    val colors = Pillion.colors
-    val haptics = LocalHapticFeedback.current
-    val description = stringResource(R.string.sos_button_description)
-    Surface(
-        onClick = {
-            haptics.performHapticFeedback(HapticFeedbackType.LongPress)
-            onClick()
-        },
-        enabled = enabled,
-        shape = CircleShape,
-        color = colors.background,
-        border = BorderStroke(3.dp, colors.alert.copy(alpha = if (enabled) 1f else 0.38f)),
-        modifier = Modifier
-            .heightIn(min = Targets.ride)
-            .widthIn(min = Targets.ride)
-            .semantics { contentDescription = description },
-    ) {
-        Box(contentAlignment = Alignment.Center, modifier = Modifier.padding(Space.s)) {
-            Text(
-                stringResource(R.string.sos_button),
-                style = RideType.control.copy(fontWeight = FontWeight.Black),
-                color = colors.danger.copy(alpha = if (enabled) 1f else 0.38f),
-                modifier = Modifier.clearAndSetSemantics {},
-            )
+            sos()
         }
     }
 }
 
 /**
- * Pillion stops hearing the rider (the mic isn't sent) until tapped again. Muted: filled dark
- * circle, crossed-out mic and the word "Muted"; the status pill says "Mic off" too.
+ * The glass pill button (the design's "End ride": `.grow.glass`, 88 dp, 20 sp): with [stopSquare]
+ * the 14 dp stop square before the word, else an optional icon.
  */
 @Composable
-private fun MuteButton(muted: Boolean, enabled: Boolean, onToggle: () -> Unit) {
+private fun GlassPill(
+    text: String,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    @DrawableRes icon: Int? = null,
+    stopSquare: Boolean = false,
+    enabled: Boolean = true,
+    height: Dp = Targets.ride,
+) {
+    val colors = Pillion.colors
+    val shape = RoundedCornerShape(50)
+    Row(
+        modifier
+            .heightIn(min = height)
+            .alpha(if (enabled) 1f else 0.45f)
+            .glass(colors, shape)
+            .clip(shape)
+            .clickable(enabled = enabled, role = Role.Button, onClick = onClick)
+            .padding(horizontal = Space.m),
+        horizontalArrangement = Arrangement.spacedBy(10.dp, Alignment.CenterHorizontally),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        if (stopSquare) Box(Modifier.size(14.dp).background(colors.ink, RoundedCornerShape(3.dp)))
+        if (icon != null) Icon(painterResource(icon), contentDescription = null, tint = colors.ink, modifier = Modifier.size(24.dp))
+        Text(text, style = RideType.control, color = colors.ink, textAlign = TextAlign.Center)
+    }
+}
+
+/** CSS `linear-gradient(135deg, #8B5CF6 0%, #EC4899 100%)` over a box of [size]. */
+private fun css135(size: Size): Brush {
+    val half = (size.width + size.height) * 0.7071f / 2f
+    val center = Offset(size.width / 2, size.height / 2)
+    val step = Offset(half * 0.7071f, half * 0.7071f)
+    return Brush.linearGradient(listOf(MicGradientStart, MicGradientEnd), start = center - step, end = center + step)
+}
+
+/**
+ * The design's mic button (`.mic`, 76 dp): violet-to-pink with a soft violet shadow; while the
+ * rider talks, a pink ring grows with their voice (`0 0 0 (4 + level·14)px`). It mutes Pillion:
+ * muted, it turns to grey glass with a crossed-out mic (the pill says "Mic off").
+ */
+@Composable
+private fun MicButton(muted: Boolean, listening: Boolean, level: GlobeLevel, enabled: Boolean, onToggle: () -> Unit) {
     val colors = Pillion.colors
     val description = stringResource(R.string.mute_description)
     val stateText = stringResource(if (muted) R.string.mute_state_on else R.string.mute_state_off)
-    Column(
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.spacedBy(Space.xs),
+    val ring = remember { listOf(CssShadow(MicRing, 0f, 0f)) }
+    Box(
+        contentAlignment = Alignment.Center,
         modifier = Modifier
-            .clip(RoundedCornerShape(Space.l))
+            .size(Targets.rideSmall)
+            // Its own layer: the ring's per-frame redraw doesn't re-record the rest of the screen.
+            .graphicsLayer()
+            .then(
+                if (muted) {
+                    Modifier.glass(colors, CircleShape)
+                } else {
+                    Modifier
+                        .cssShadows(CircleShape, listOf(colors.micShadow))
+                        .cssShadows(CircleShape, ring, spread = { if (listening) (4f + level.value * 14f).dp else 0.dp })
+                        .drawBehind { drawCircle(css135(size)) }
+                },
+            )
+            .clip(CircleShape)
             .toggleable(value = muted, enabled = enabled, role = Role.Switch, onValueChange = { onToggle() })
-            .semantics(mergeDescendants = true) {
+            .semantics {
                 contentDescription = description
                 stateDescription = stateText
             },
     ) {
-        Box(
-            contentAlignment = Alignment.Center,
-            modifier = Modifier
-                .size(Targets.rideSmall)
-                .background(if (muted) colors.ink else colors.surfaceHigh, CircleShape),
-        ) {
-            Icon(
-                painterResource(if (muted) R.drawable.ic_mic_off else R.drawable.ic_mic),
-                contentDescription = null,
-                tint = if (muted) colors.background else colors.ink,
-                modifier = Modifier.size(32.dp),
-            )
-        }
+        Icon(
+            painterResource(if (muted) R.drawable.ic_line_mic_off else R.drawable.ic_line_mic),
+            contentDescription = null,
+            tint = if (muted) colors.ink else Color.White,
+            modifier = Modifier.size(28.dp),
+        )
+    }
+}
+
+/**
+ * SOS (88 dp): the design's red sphere, `radial-gradient(circle at 35% 30%, #FF6B5E, #D92D20 60%,
+ * #A8160C)`, with a red shadow. Works with or without a ride, voice or internet: a 5-second cancel
+ * window, then SMS.
+ */
+@Composable
+private fun SosButton(enabled: Boolean, onClick: () -> Unit) {
+    val haptics = LocalHapticFeedback.current
+    val description = stringResource(R.string.sos_button_description)
+    Box(
+        contentAlignment = Alignment.Center,
+        modifier = Modifier
+            .size(Targets.ride)
+            .alpha(if (enabled) 1f else 0.45f)
+            .cssShadows(CircleShape, listOf(SosShadow))
+            .drawBehind {
+                val focus = Offset(size.width * 0.35f, size.height * 0.30f)
+                // "circle" with no size = farthest-corner: to the bottom-right corner from the focus.
+                val radius = (Offset(size.width, size.height) - focus).getDistance()
+                drawCircle(Brush.radialGradient(0f to SosCenter, 0.6f to SosMid, 1f to SosEdge, center = focus, radius = radius))
+            }
+            .clip(CircleShape)
+            .clickable(enabled = enabled, role = Role.Button) {
+                haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+                onClick()
+            }
+            .semantics { contentDescription = description },
+    ) {
         Text(
-            stringResource(if (muted) R.string.mute_label_on else R.string.mute_label_off),
-            style = MaterialTheme.typography.labelMedium,
-            color = if (muted) colors.ink else colors.inkSecondary,
+            stringResource(R.string.sos_button),
+            style = RideType.control.copy(fontWeight = FontWeight.Bold),
+            color = Color.White,
             modifier = Modifier.clearAndSetSemantics {},
         )
     }
@@ -1181,6 +1307,24 @@ private fun DebugSafetyCard(viewModel: RideViewModel, rideActive: Boolean) {
                 minHeight = 48.dp,
             )
         }
+        PillButton(
+            text = stringResource(R.string.debug_ask),
+            onClick = { if (!viewModel.debugAsk("नेक्स्ट ड्रॉप कितना दूर है?")) Toast.makeText(context, needsRide, Toast.LENGTH_LONG).show() },
+            container = Pillion.colors.surfaceHigh,
+            content = Pillion.colors.ink,
+            minHeight = 48.dp,
+        )
+        val preview by viewModel.voicePreview.collectAsStateWithLifecycle()
+        PillButton(
+            text = stringResource(R.string.debug_voice_preview, preview?.name ?: stringResource(R.string.debug_voice_preview_off)),
+            onClick = {
+                val order = listOf(null) + RideVoiceState.entries
+                viewModel.previewVoice(order[(order.indexOf(preview) + 1) % order.size])
+            },
+            container = Pillion.colors.surfaceHigh,
+            content = Pillion.colors.ink,
+            minHeight = 48.dp,
+        )
         DebugSwitch(stringResource(R.string.debug_record), recording, viewModel.debug::setRecording)
         DebugSwitch(stringResource(R.string.debug_demo), demo, viewModel.debug::setDemoMode)
         DebugSwitch(stringResource(R.string.debug_fatigue), fatigue, viewModel.debug::setFatigueInTwoMinutes)

@@ -232,6 +232,9 @@ class RideRepository(
     /** km/h from a GPS fix of the last 10 s, or null. */
     fun riderSpeedKmh(): Float? = location.recentSpeedKmh()
 
+    /** Debug only: a typed question, handled by the agent as if spoken. */
+    suspend fun debugThink(ride: RideCredentials, text: String) = api.debugThink(ride.rideToken, text)
+
     /** Debug only: mirror a per-turn latency line into the backend log. */
     suspend fun reportLatency(line: String) = api.reportLatency(line)
 

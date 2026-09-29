@@ -32,9 +32,11 @@ import java.io.IOException
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.TimeoutCancellationException
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -42,8 +44,16 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.flow.transformLatest
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+
+/**
+ * What Pillion's voice is doing, for the globe and the status pill: the rider is talking
+ * (listening), the agent is working on a reply (thinking) or saying it (speaking); anything else
+ * (between turns, muted, connecting, voice offline, no ride) is idle.
+ */
+enum class RideVoiceState { Idle, Listening, Thinking, Speaking }
 
 enum class RideStatus { Idle, Connecting, Listening, Thinking, Speaking, FamilyOnLine, Reconnecting, VoiceOffline, Ending, Ended }
 
@@ -90,7 +100,9 @@ class RideViewModel(application: Application) : AndroidViewModel(application) {
     private val voiceConnecting = MutableStateFlow(false)
     private var ride: RideCredentials? = null
     private var rideGeneration = 0
-    private var rideStartedAt = 0L
+    /** Wall-clock start of the current ride (the ride screen's timer counts from it). */
+    var rideStartedAt = 0L
+        private set
     private var rideServices: Job? = null
     private val startGate = StartGate()
 
@@ -98,6 +110,8 @@ class RideViewModel(application: Application) : AndroidViewModel(application) {
 
     /** The scanned order, or the seeded demo order (whose number debug builds can set). */
     val order: StateFlow<Order> = repository.orders.order
+    /** The scanned order the rider set aside for the demo order ("Back to … order"). */
+    val setAsideOrder: StateFlow<Order?> = repository.orders.setAside
     val scanState: StateFlow<ScanState> = scanner.state
     private val _locatingDrop = MutableStateFlow(false)
     /** The drop of a just-set order is being looked up on the map. */
@@ -149,6 +163,33 @@ class RideViewModel(application: Application) : AndroidViewModel(application) {
         }
         state.copy(status = status, permissionNeeded = permission, voiceProblem = problem)
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), RideUiState())
+
+    /**
+     * The rider talking comes from Agora's local VAD (reported every 100 ms); it's held for
+     * [TALK_HOLD_MS] after the last voiced report so the globe and pill don't flicker between words.
+     */
+    @OptIn(ExperimentalCoroutinesApi::class)
+    private val riderTalking = voice.riderSpeaking.transformLatest { talking ->
+        if (!talking) delay(TALK_HOLD_MS)
+        emit(talking)
+    }
+
+    private val _voicePreview = MutableStateFlow<RideVoiceState?>(null)
+    /** Debug builds: a voice state shown without anyone talking (listening uses the design's demo voice). */
+    val voicePreview: StateFlow<RideVoiceState?> = _voicePreview.asStateFlow()
+
+    fun previewVoice(state: RideVoiceState?) {
+        _voicePreview.value = state
+    }
+
+    val voiceState: StateFlow<RideVoiceState> = combine(uiState, riderTalking, _voicePreview) { state, talking, preview ->
+        preview ?: when (state.status) {
+            RideStatus.Thinking -> RideVoiceState.Thinking
+            RideStatus.Speaking -> RideVoiceState.Speaking
+            RideStatus.Listening -> if (talking) RideVoiceState.Listening else RideVoiceState.Idle
+            else -> RideVoiceState.Idle
+        }
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), RideVoiceState.Idle)
 
     init {
         viewModelScope.launch {
@@ -380,7 +421,9 @@ class RideViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    fun useDemoOrder() = repository.orders.clear()
+    fun useDemoOrder() = repository.orders.useDemo()
+
+    fun backToScannedOrder() = repository.orders.restore()
 
     /** The on-screen SOS button: works with or without a ride, voice or internet. */
     fun sos() {
@@ -392,6 +435,15 @@ class RideViewModel(application: Application) : AndroidViewModel(application) {
 
     /** Debug builds: a synthetic crash trace through the ride's real detector. */
     fun simulateCrash(): Boolean = safety.simulateCrash()
+
+    /** Debug builds: asks the live agent [text] without a microphone (the emulator's is silent). */
+    fun debugAsk(text: String): Boolean {
+        val current = ride ?: return false
+        viewModelScope.launch(Dispatchers.IO) {
+            runCatching { repository.debugThink(current, text) }.onFailure { Log.w(TAG, "Debug question not sent", it) }
+        }
+        return true
+    }
 
     private suspend fun serveRide(started: RideCredentials) {
         try {
@@ -475,6 +527,7 @@ class RideViewModel(application: Application) : AndroidViewModel(application) {
     private companion object {
         const val TAG = "RideViewModel"
         const val MOVING_KMH = 10f
+        const val TALK_HOLD_MS = 600L
         val VOICE_STATUSES = setOf(
             RideStatus.Connecting, RideStatus.Listening, RideStatus.Thinking, RideStatus.Speaking, RideStatus.Reconnecting,
             RideStatus.FamilyOnLine,
