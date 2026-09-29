@@ -1,0 +1,871 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Pillion Glass Orb Handoff</title>
+</head>
+<body>
+
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&family=Noto+Sans+Devanagari:wght@400;500;600;700&display=swap">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<style>
+:root{
+  --page:#E9E6E0; --ink:#17150F; --muted:#5F5A51; --frame:#CFCAC1;
+  --font:'Geist','Noto Sans Devanagari',system-ui,-apple-system,'Segoe UI',sans-serif;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){ --page:#161513; --ink:#F3F0EA; --muted:#A9A49A; --frame:#2E2B27; color-scheme:dark; }
+}
+:root[data-theme="dark"]{ --page:#161513; --ink:#F3F0EA; --muted:#A9A49A; --frame:#2E2B27; color-scheme:dark; }
+
+body{background:var(--page);color:var(--ink);font-family:var(--font);padding-inline:16px;padding-block:40px 64px}
+.wrap{max-width:1320px;margin:0 auto;display:flex;flex-direction:column;gap:40px}
+header{display:flex;flex-direction:column;gap:8px;max-width:640px}
+h1{margin:0;font-size:34px;line-height:1.2;font-weight:600;text-wrap:balance}
+header p{margin:0;font-size:17px;line-height:1.5;color:var(--muted)}
+.row{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:32px;align-items:start}
+@media (max-width:1180px){.row{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media (max-width:780px){.row{grid-template-columns:minmax(0,1fr)}}
+.look{display:flex;flex-direction:column;gap:14px;align-items:center}
+.label{align-self:stretch;max-width:390px;margin:0 auto;width:100%;display:flex;flex-direction:column;gap:4px}
+.label b{font-size:20px;font-weight:600}
+.label span{font-size:15px;line-height:1.45;color:var(--muted)}
+.letter{display:inline-flex;min-width:30px;padding:0 6px;box-sizing:border-box;width:auto;height:30px;border-radius:15px;background:var(--ink);color:var(--page);align-items:center;justify-content:center;font-size:15px;font-weight:700;margin-right:8px;vertical-align:2px}
+
+/* phone */
+.phone{width:100%;max-width:390px;min-height:820px;box-sizing:border-box;border-radius:44px;overflow:hidden;position:relative;display:flex;flex-direction:column;padding:28px 24px 28px;font-family:var(--font);box-shadow:0 0 0 8px var(--frame),0 30px 60px rgba(0,0,0,.18)}
+.phone button{font-family:inherit;cursor:pointer;display:flex;align-items:center;justify-content:center}
+.phone button:focus-visible{outline:3px solid #FFB81F;outline-offset:3px}
+.top{display:flex;justify-content:space-between;align-items:center;position:relative}
+.num{font-variant-numeric:tabular-nums}
+.ctrls{margin-top:auto;display:flex;align-items:center;gap:14px;position:relative}
+.ctrls .grow{flex:1 1 auto;min-width:0}
+svg{flex-shrink:0}
+
+/* A Midnight Glass */
+.a{background:#0A0A0B;color:#F4F1EA}
+.a .glow{position:absolute;left:-60px;top:20px;width:510px;height:460px;background:radial-gradient(closest-side,rgba(217,51,191,.16),rgba(217,51,191,0));pointer-events:none}
+.a .pill{display:flex;align-items:center;gap:8px;height:36px;padding:0 14px;border-radius:18px;background:rgba(255,184,31,.12);border:1px solid rgba(255,184,31,.28);color:#FFC24A;font-size:15px;font-weight:600}
+.dot{width:8px;height:8px;border-radius:4px}
+.a .orbbox{position:relative;height:262px;margin:18px -24px 0}
+.a .globe{position:absolute;inset:0}
+.a .globe canvas{display:block;width:100%;height:100%}
+.ring{position:absolute;border-radius:50%}
+.a .say{position:relative;display:flex;flex-direction:column;gap:10px;margin-top:6px}
+.glass{background:linear-gradient(180deg,rgba(255,255,255,.09),rgba(255,255,255,.035));border:1px solid rgba(255,255,255,.10);box-shadow:inset 0 1px 0 rgba(255,255,255,.08)}
+.a .drop{position:relative;margin-top:20px;display:flex;align-items:center;gap:14px;padding:14px 16px;border-radius:24px}
+.a .ic{width:44px;height:44px;border-radius:22px;background:rgba(255,184,31,.14);color:#FFC24A;display:flex;align-items:center;justify-content:center;flex-shrink:0}
+
+.a.v1{background:#000000;color:#FFFFFF}
+.v1 .pill,.v1 .glass{background:rgba(28,28,30,.45);-webkit-backdrop-filter:blur(25px);backdrop-filter:blur(25px);border:1px solid rgba(255,255,255,.04);box-shadow:none;color:#FFFFFF}
+.v1 .ic{background:rgba(255,255,255,.05);color:#F59E0B}
+.v1 .mic{border:none;background:linear-gradient(135deg,#8B5CF6 0%,#EC4899 100%);box-shadow:0 10px 28px rgba(139,92,246,.35)}
+
+.a.v2{background:#0B0B0E;color:#FFFFFF}
+.v2 .v2-status{position:relative;display:flex;justify-content:space-between;align-items:center;font-size:13px;color:#8E8E93}
+.v2 .v2-net{display:flex;align-items:center;gap:8px;font-weight:500}
+.v2 .v2-net svg{color:#FFFFFF}
+.v2 .v2-time b{font-size:20px;font-weight:600;color:#FFFFFF;margin-right:4px}
+.v2 .v2-orb{margin-top:14px;height:300px}
+.v2 .v2-pill{position:absolute;left:24px;top:8px;display:flex;align-items:center;gap:8px;height:34px;padding:0 14px;border-radius:17px;font-size:14px;font-weight:600;color:#FFFFFF;background:rgba(239,68,68,.14);border:1px solid rgba(239,68,68,.30);-webkit-backdrop-filter:blur(24px);backdrop-filter:blur(24px);transition:background .3s,border-color .3s}
+.v2 .v2-dot{position:relative;width:8px;height:8px;border-radius:4px;background:#EF4444}
+.v2 .v2-dot::after{content:"";position:absolute;inset:0;border-radius:inherit;background:inherit;animation:v2pulse 1.4s ease-out infinite}
+@keyframes v2pulse{0%{transform:scale(1);opacity:.7}100%{transform:scale(3);opacity:0}}
+.v2[data-state="paused"] .v2-pill{background:rgba(255,255,255,.05);border-color:rgba(255,255,255,.08);color:#C7C7CC}
+.v2[data-state="paused"] .v2-dot{background:#8E8E93}
+.v2[data-state="paused"] .v2-dot::after{animation:none;opacity:0}
+.v2 .v2-panel{position:relative;margin-top:12px;padding:16px 18px;border-radius:24px;display:flex;flex-direction:column;gap:8px;background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.05);-webkit-backdrop-filter:blur(30px);backdrop-filter:blur(30px)}
+.v2 .v2-route{flex-direction:row;align-items:center;gap:14px;overflow:hidden}
+.v2 .v2-strip{align-self:stretch;width:4px;border-radius:2px;background:#F59E0B;box-shadow:0 0 12px rgba(245,158,11,.5);flex-shrink:0}
+.v2 .v2-dock{padding:8px;margin-top:auto;border-radius:48px;gap:8px;background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.05);-webkit-backdrop-filter:blur(30px);backdrop-filter:blur(30px)}
+.v2 .v2-mic{border:none;color:#FFFFFF;background:linear-gradient(135deg,#9333EA 0%,#EC4899 100%);box-shadow:0 8px 24px rgba(236,72,153,.35);transition:filter .3s,box-shadow .3s}
+.v2 .v2-mic .ic-off{display:none}
+.v2[data-state="paused"] .v2-mic{filter:saturate(.35) brightness(.8);box-shadow:none}
+.v2[data-state="paused"] .v2-mic .ic-on{display:none}
+.v2[data-state="paused"] .v2-mic .ic-off{display:block}
+.v2 .v2-end{border:1px solid rgba(255,255,255,.08);background:rgba(255,255,255,.06);color:#FFFFFF}
+.v2 .v2-sos{border:none;border-radius:20px;background:#DC2626;color:#FFFFFF;font-size:18px;font-weight:800;letter-spacing:.08em;text-transform:uppercase}
+@media (prefers-reduced-motion: reduce){.v2 .v2-dot::after{animation:none}}
+
+.a.v3{color:#1A1A24;background:radial-gradient(120% 60% at 0% 35%,#FCE8ED 0%,rgba(252,232,237,0) 60%),radial-gradient(110% 60% at 100% 100%,#E3E8FC 0%,rgba(227,232,252,0) 65%),#F9F9FB;padding-top:18px}
+.v3 .v3-sys{display:flex;justify-content:space-between;align-items:center;font-size:15px;font-weight:600;padding:0 6px}
+.v3 .v3-sysic{display:flex;align-items:center;gap:6px}
+.v3 .v3-nav{display:grid;grid-template-columns:48px 1fr 48px;align-items:center;margin-top:16px}
+.v3 .v3-title{text-align:center;font-size:18px;font-weight:700;color:#1A1A24}
+.v3 .v3-round,.v3 .v3-side{border:1px solid rgba(255,255,255,.9);background:rgba(255,255,255,.65);-webkit-backdrop-filter:blur(20px);backdrop-filter:blur(20px);box-shadow:0 1px 2px rgba(26,26,36,.06),0 8px 24px rgba(26,26,36,.08);color:#1A1A24}
+.v3 .v3-round{width:48px;height:48px;border-radius:24px}
+.v3 .v3-state{margin-top:18px;text-align:center;font-size:15px;color:#6B6B78;font-weight:500}
+.v3 .v3-orb{height:290px;margin-top:0}
+.v3 .v3-hero{margin:4px 0 20px;text-align:center;font-size:26px;line-height:1.3;color:#8A8A96;font-weight:400;text-wrap:balance}
+.v3 .v3-hero b{color:#1A1A24;font-weight:700}
+.v3 .v3-wave{margin:auto auto 0;height:44px;width:100%;box-sizing:border-box;padding:0 18px;border-radius:22px;display:flex;align-items:center;justify-content:space-between;background:linear-gradient(90deg,#A78BFA,#60A5FA 55%,#5EEAD4)}
+.v3 .v3-wave span{width:4px;border-radius:2px;background:#FFFFFF;height:calc(var(--h) * 1%);max-height:30px;min-height:4px;transform-origin:center;animation:v3bar 1.1s ease-in-out infinite alternate;animation-delay:calc(var(--h) * -17ms)}
+@keyframes v3bar{from{transform:scaleY(.35)}to{transform:scaleY(1)}}
+.v3[data-rec="off"] .v3-wave span{animation-play-state:paused;transform:scaleY(.25)}
+.v3 .v3-timer{margin-top:14px;text-align:center;font-size:15px;font-weight:600;color:#1A1A24;letter-spacing:.04em}
+.v3 .v3-dock{display:flex;align-items:center;justify-content:center;gap:36px;margin-top:10px}
+.v3 .v3-side{width:56px;height:56px;border-radius:28px}
+.v3 .v3-mic{width:84px;height:84px;border-radius:42px;border:none;color:#FFFFFF;background:linear-gradient(135deg,#FF7A45 0%,#F43F5E 55%,#D6246E 100%);box-shadow:0 12px 30px rgba(244,63,94,.40),0 0 0 8px rgba(244,63,94,.10);transition:box-shadow .3s,filter .3s}
+.v3[data-rec="off"] .v3-mic{box-shadow:0 6px 16px rgba(244,63,94,.25);filter:saturate(.8)}
+.v3 button:focus-visible{outline:3px solid #7C3AED;outline-offset:3px}
+@media (prefers-reduced-motion: reduce){.v3 .v3-wave span{animation:none}}
+
+.v5-orb::before{content:"";position:absolute;left:50%;top:50%;width:230px;height:230px;margin:-115px 0 0 -115px;border-radius:50%;background:radial-gradient(closest-side,rgba(167,139,250,.22),rgba(167,139,250,0));pointer-events:none}
+
+.a.v6{background:
+  radial-gradient(60% 45% at 85% 8%,#D2311F 0%,rgba(210,49,31,0) 70%),
+  radial-gradient(55% 40% at 10% 30%,#B8261A 0%,rgba(184,38,26,0) 70%),
+  radial-gradient(50% 32% at 72% 40%,#14162E 0%,rgba(20,22,46,0) 75%),
+  radial-gradient(35% 22% at 15% 8%,#1A1830 0%,rgba(26,24,48,0) 75%),
+  radial-gradient(50% 35% at 25% 62%,#9E1F16 0%,rgba(158,31,22,0) 70%),
+  radial-gradient(70% 40% at 60% 100%,#0C0E1E 0%,rgba(12,14,30,0) 75%),
+  linear-gradient(180deg,#A3231A 0%,#6E1812 55%,#15121F 100%)}
+.v6 .pill,.v6 .glass{background:rgba(255,255,255,.12);border:1px solid rgba(255,255,255,.28);-webkit-backdrop-filter:blur(24px);backdrop-filter:blur(24px);box-shadow:inset 0 1px 0 rgba(255,255,255,.18)}
+.v6 .orbbox::before{content:"";position:absolute;left:50%;top:50%;width:320px;height:300px;margin:-150px 0 0 -160px;border-radius:50%;background:radial-gradient(closest-side,#0D0F20 0%,#0D0F20 42%,rgba(13,15,32,.6) 68%,rgba(13,15,32,0) 100%);pointer-events:none}
+.v6 .globe{z-index:1}
+.v6 .ic{background:rgba(255,255,255,.14);color:#FFFFFF}
+.v6 .mic{background:rgba(255,255,255,.14);border:1px solid rgba(255,255,255,.32);-webkit-backdrop-filter:blur(24px);backdrop-filter:blur(24px);box-shadow:inset 0 1px 0 rgba(255,255,255,.2)}
+.v6 button[aria-label="Send SOS"]{background:#FFFFFF!important;color:#B3261E!important;box-shadow:0 10px 28px rgba(0,0,0,.25)!important}
+
+.v7 .v5-orb::before{transform:scale(calc(1 + var(--lvl, 0) * 0.45));opacity:calc(0.75 + var(--lvl, 0) * 0.9);transition:transform .08s linear}
+.v7 .v7-dot{background:#8E8E93;box-shadow:none;transition:background .3s,box-shadow .3s}
+.v7[data-voice="listening"] .v7-dot{background:#EC4899;box-shadow:0 0 10px rgba(236,72,153,.9);animation:v2pulseDot 1s ease-in-out infinite alternate}
+.v7[data-voice="thinking"] .v7-dot{background:#A78BFA;box-shadow:0 0 10px rgba(167,139,250,.9)}
+.v7[data-voice="speaking"] .v7-dot{background:#FFFFFF;box-shadow:0 0 10px rgba(255,255,255,.9)}
+@keyframes v2pulseDot{from{opacity:.45}to{opacity:1}}
+.v7[data-voice="listening"] .mic{box-shadow:0 0 0 calc(4px + var(--lvl, 0) * 14px) rgba(236,72,153,.22),0 10px 28px rgba(139,92,246,.35)}
+@media (prefers-reduced-motion: reduce){.v7[data-voice="listening"] .v7-dot{animation:none}}
+
+.a.v1.v8{background:radial-gradient(90% 55% at 20% 15%,#FFFFFF 0%,rgba(255,255,255,0) 60%),radial-gradient(80% 50% at 90% 95%,#E4DEF3 0%,rgba(228,222,243,0) 70%),linear-gradient(180deg,#F5F3F8 0%,#ECE8F2 100%);color:#1A1A24}
+.v1.v8 .pill,.v1.v8 .glass{background:rgba(255,255,255,.62);border:1px solid rgba(255,255,255,.95);-webkit-backdrop-filter:blur(24px);backdrop-filter:blur(24px);box-shadow:0 1px 2px rgba(40,30,80,.06),0 10px 30px rgba(60,40,120,.10);color:#1A1A24}
+.v1.v8 .ic{background:rgba(124,58,237,.10);color:#6D28D9}
+.v1.v8 .mic{box-shadow:0 10px 26px rgba(139,92,246,.35)}
+.v8 .v5-orb::before{background:radial-gradient(closest-side,rgba(139,92,246,.20),rgba(139,92,246,0))}
+.v8[data-voice="speaking"] .v7-dot{background:#1A1A24;box-shadow:0 0 8px rgba(26,26,36,.35)}
+.v8[data-voice="listening"] .v7-dot{background:#DB2777}
+.v8 .phone button:focus-visible,.v8 button:focus-visible{outline-color:#6D28D9}
+
+/* B Daylight */
+.b{background:#F6F3EE;color:#17150F}
+.card{background:#FFFDFA;box-shadow:0 1px 2px rgba(23,21,15,.06),0 14px 36px rgba(23,21,15,.08)}
+.b .round{width:48px;height:48px;border-radius:24px;border:none;flex-shrink:0}
+
+/* C Instrument */
+.c{background:#000;color:#F3F0EA}
+.c .tile{padding:16px 18px;border-radius:22px;background:#121212;border:1px solid #242424;display:flex;flex-direction:column;gap:4px}
+.c .spin{position:absolute;inset:0;border-radius:50%;background:conic-gradient(from 200deg,rgba(166,152,255,0),rgba(166,152,255,.9),rgba(166,152,255,0));animation:spin 2.4s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+
+@media (prefers-reduced-motion: reduce){.c .spin{animation:none}}
+</style>
+
+<div class="wrap">
+<header>
+  <h1>Pillion glass orb: dark (A7) and light (A8)</h1>
+  <p>Handoff file. A7 = dark mode, A8 = light mode, both with the voice-reactive glass orb (tap the mic). A5 is the same dark screen without voice reaction, for reference only.</p>
+</header>
+
+<div class="row">
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<!-- A copy 7 -->
+<section class="look">
+  <div class="label"><b><span class="letter">A7</span>Midnight Glass (copy 7)</b><span>Copy 5, voice-reactive. Tap the mic and talk: the orb swells and speeds up with your voice, spins while thinking, pulses while Pillion answers.</span></div>
+  <div class="phone a v1 v7" lang="hi" data-voice="idle">
+        <div class="top">
+      <div class="pill" role="status" aria-live="polite"><span class="dot v7-dot"></span><span class="v7-label" lang="en">Tap mic to talk</span></div>
+      <div style="text-align:right"><div class="num" style="font-size:22px;font-weight:600">42:18</div><div style="font-size:12px;color:#8E8E93">on ride</div></div>
+    </div>
+    <div class="orbbox v5-orb">
+      <div class="globe" data-kind="glass" data-voice-orb="1" role="img" aria-label="Pillion voice globe, listening"></div>
+    </div>
+    <div class="say">
+      <div style="font-size:17px;line-height:1.4;color:#8E8E93">आप · नेक्स्ट ड्रॉप कितना दूर है?</div>
+      <div style="font-size:30px;line-height:1.3;font-weight:600;color:#FFFFFF">Laxmi Nagar 6.9 km दूर है, लगभग 25 मिनट।</div>
+      <div lang="en" style="font-size:16px;line-height:1.4;color:#8E8E93">Laxmi Nagar is 6.9 km away, about 25 minutes.</div>
+    </div>
+    <div class="drop glass">
+      <div class="ic"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="6" cy="19" r="2"></circle><circle cx="18" cy="5" r="2"></circle><path d="M8 19h8a3 3 0 0 0 0-6H8a3 3 0 0 1 0-6h8"></path></svg></div>
+      <div style="display:flex;flex-direction:column;gap:2px"><div style="font-size:13px;color:#8E8E93">Next drop · Rahul</div><div class="num" style="font-size:22px;font-weight:600">6.9 km · 25 min</div></div>
+    </div>
+    <div class="ctrls" style="margin-top:auto;padding-top:24px">
+      <button class="mic" data-voice-toggle aria-pressed="false" aria-label="Start talking" style="width:76px;height:76px;flex-shrink:0;border-radius:38px;color:#FFFFFF"><svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="3" width="6" height="11" rx="3"></rect><path d="M5 11a7 7 0 0 0 14 0"></path><path d="M12 18v3"></path></svg></button>
+      <button class="grow glass" style="height:88px;border-radius:44px;color:#FFFFFF;font-size:20px;font-weight:600;gap:10px"><span style="width:14px;height:14px;border-radius:3px;background:#FFFFFF"></span>End ride</button>
+      <button aria-label="Send SOS" style="width:88px;height:88px;flex-shrink:0;border-radius:44px;border:none;background:radial-gradient(circle at 35% 30%,#FF6B5E,#D92D20 60%,#A8160C);color:#fff;font-size:20px;font-weight:700;box-shadow:0 10px 28px rgba(255,60,40,.35)">SOS</button>
+    </div>
+  </div>
+</section>
+
+<!-- A copy 8 -->
+<section class="look">
+  <div class="label"><b><span class="letter">A8</span>Midnight Glass (copy 8) · Light</b><span>Light mode of copy 7. Same voice-reactive glass orb, on a soft pearl-lavender ground.</span></div>
+  <div class="phone a v1 v7 v8" lang="hi" data-voice="idle">
+        <div class="top">
+      <div class="pill" role="status" aria-live="polite"><span class="dot v7-dot"></span><span class="v7-label" lang="en">Tap mic to talk</span></div>
+      <div style="text-align:right"><div class="num" style="font-size:22px;font-weight:600">42:18</div><div style="font-size:12px;color:#5E5B6B">on ride</div></div>
+    </div>
+    <div class="orbbox v5-orb">
+      <div class="globe" data-kind="glass" data-voice-orb="1" role="img" aria-label="Pillion voice globe, listening"></div>
+    </div>
+    <div class="say">
+      <div style="font-size:17px;line-height:1.4;color:#5E5B6B">आप · नेक्स्ट ड्रॉप कितना दूर है?</div>
+      <div style="font-size:30px;line-height:1.3;font-weight:600;color:#1A1A24">Laxmi Nagar 6.9 km दूर है, लगभग 25 मिनट।</div>
+      <div lang="en" style="font-size:16px;line-height:1.4;color:#5E5B6B">Laxmi Nagar is 6.9 km away, about 25 minutes.</div>
+    </div>
+    <div class="drop glass">
+      <div class="ic"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="6" cy="19" r="2"></circle><circle cx="18" cy="5" r="2"></circle><path d="M8 19h8a3 3 0 0 0 0-6H8a3 3 0 0 1 0-6h8"></path></svg></div>
+      <div style="display:flex;flex-direction:column;gap:2px"><div style="font-size:13px;color:#5E5B6B">Next drop · Rahul</div><div class="num" style="font-size:22px;font-weight:600">6.9 km · 25 min</div></div>
+    </div>
+    <div class="ctrls" style="margin-top:auto;padding-top:24px">
+      <button class="mic" data-voice-toggle aria-pressed="false" aria-label="Start talking" style="width:76px;height:76px;flex-shrink:0;border-radius:38px;color:#FFFFFF"><svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="3" width="6" height="11" rx="3"></rect><path d="M5 11a7 7 0 0 0 14 0"></path><path d="M12 18v3"></path></svg></button>
+      <button class="grow glass" style="height:88px;border-radius:44px;color:#1A1A24;font-size:20px;font-weight:600;gap:10px"><span style="width:14px;height:14px;border-radius:3px;background:#1A1A24"></span>End ride</button>
+      <button aria-label="Send SOS" style="width:88px;height:88px;flex-shrink:0;border-radius:44px;border:none;background:radial-gradient(circle at 35% 30%,#FF6B5E,#D92D20 60%,#A8160C);color:#fff;font-size:20px;font-weight:700;box-shadow:0 10px 28px rgba(255,60,40,.35)">SOS</button>
+    </div>
+  </div>
+</section>
+
+<!-- A copy 5 -->
+<section class="look">
+  <div class="label"><b><span class="letter">A5</span>Midnight Glass (copy 5)</b><span>Copy 1 with a swirled iridescent glass orb.</span></div>
+  <div class="phone a v1" lang="hi">
+        <div class="top">
+      <div class="pill"><span class="dot" style="background:#EC4899;box-shadow:0 0 10px rgba(236,72,153,.8)"></span>Listening</div>
+      <div style="text-align:right"><div class="num" style="font-size:22px;font-weight:600">42:18</div><div style="font-size:12px;color:#8E8E93">on ride</div></div>
+    </div>
+    <div class="orbbox v5-orb">
+      <div class="globe" data-kind="glass" role="img" aria-label="Pillion voice globe, listening"></div>
+    </div>
+    <div class="say">
+      <div style="font-size:17px;line-height:1.4;color:#8E8E93">आप · नेक्स्ट ड्रॉप कितना दूर है?</div>
+      <div style="font-size:30px;line-height:1.3;font-weight:600;color:#FFFFFF">Laxmi Nagar 6.9 km दूर है, लगभग 25 मिनट।</div>
+      <div lang="en" style="font-size:16px;line-height:1.4;color:#8E8E93">Laxmi Nagar is 6.9 km away, about 25 minutes.</div>
+    </div>
+    <div class="drop glass">
+      <div class="ic"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="6" cy="19" r="2"></circle><circle cx="18" cy="5" r="2"></circle><path d="M8 19h8a3 3 0 0 0 0-6H8a3 3 0 0 1 0-6h8"></path></svg></div>
+      <div style="display:flex;flex-direction:column;gap:2px"><div style="font-size:13px;color:#8E8E93">Next drop · Rahul</div><div class="num" style="font-size:22px;font-weight:600">6.9 km · 25 min</div></div>
+    </div>
+    <div class="ctrls" style="margin-top:auto;padding-top:24px">
+      <button class="mic" aria-label="Mute microphone" style="width:76px;height:76px;flex-shrink:0;border-radius:38px;color:#FFFFFF"><svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="3" width="6" height="11" rx="3"></rect><path d="M5 11a7 7 0 0 0 14 0"></path><path d="M12 18v3"></path></svg></button>
+      <button class="grow glass" style="height:88px;border-radius:44px;color:#FFFFFF;font-size:20px;font-weight:600;gap:10px"><span style="width:14px;height:14px;border-radius:3px;background:#FFFFFF"></span>End ride</button>
+      <button aria-label="Send SOS" style="width:88px;height:88px;flex-shrink:0;border-radius:44px;border:none;background:radial-gradient(circle at 35% 30%,#FF6B5E,#D92D20 60%,#A8160C);color:#fff;font-size:20px;font-weight:700;box-shadow:0 10px 28px rgba(255,60,40,.35)">SOS</button>
+    </div>
+  </div>
+</section>
+
+</div>
+</div>
+
+<script>
+(function () {
+  if (!window.THREE) { wireMics(); wireRecorders(); wireVoice(); return; }
+  var TONES = {
+    crimson:  { deep: [0.300, 0.050, 0.090], mid: [0.880, 0.200, 0.260], bright: [1.000, 0.500, 0.440], peak: [1.000, 0.930, 0.900], overlay: 1 },
+    nebula:   { deep: [0.180, 0.063, 0.380], mid: [0.545, 0.361, 0.965], bright: [0.925, 0.282, 0.600], peak: [0.984, 0.812, 0.910] },
+    halftone: { deep: [0.486, 0.227, 0.929], mid: [0.012, 0.412, 0.631], bright: [0.051, 0.580, 0.533], peak: [0.176, 0.831, 0.749], light: 1 },
+    aurora:  { deep: [0.200, 0.070, 0.320], mid: [0.576, 0.200, 0.918], bright: [0.925, 0.282, 0.600], peak: [0.961, 0.620, 0.043] },
+    magenta: { deep: [0.18, 0.08, 0.28], mid: [0.515, 0.14, 0.515], bright: [0.85, 0.20, 0.75], peak: [0.85, 0.20, 0.75], linear: 1 },
+    velvet:  { deep: [0.192, 0.063, 0.400], mid: [0.263, 0.220, 0.792], bright: [0.918, 0.345, 0.047], peak: [0.961, 0.620, 0.043] }
+  };
+  function initGlobe(container) {
+  var tone = TONES[container.dataset.tone] || TONES.magenta;
+
+  function size() { return { w: container.clientWidth || 390, h: container.clientHeight || 262 }; }
+  var s = size();
+
+  // --- 1. WebGL setup, sized to the orb box instead of the window ---
+  var scene = new THREE.Scene();
+  var camera = new THREE.PerspectiveCamera(38, s.w / s.h, 0.1, 1000);
+  camera.position.z = 5.8;
+
+  var renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, powerPreference: 'high-performance' });
+  var pr = Math.min(window.devicePixelRatio || 1, 2);
+  renderer.setPixelRatio(pr);
+  renderer.setSize(s.w, s.h);
+  container.appendChild(renderer.domElement);
+
+  // --- 2. Parametric sphere grid ---
+  var segmentsX = 160, segmentsY = 160, radius = 1.35;
+  var positions = new Float32Array(segmentsX * segmentsY * 3);
+  var index = 0;
+  for (var i = 0; i < segmentsX; i++) {
+    var phi = (i / (segmentsX - 1)) * Math.PI;
+    for (var j = 0; j < segmentsY; j++) {
+      var theta = (j / (segmentsY - 1)) * Math.PI * 2;
+      positions[index * 3]     = radius * Math.sin(phi) * Math.cos(theta);
+      positions[index * 3 + 1] = radius * Math.sin(phi) * Math.sin(theta);
+      positions[index * 3 + 2] = radius * Math.cos(phi);
+      index++;
+    }
+  }
+  var geometry = new THREE.BufferGeometry();
+  geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+
+  // --- 3. Vertex shader (your ribbon folds; point size scaled by pixel ratio) ---
+  var vertexShader = [
+    'uniform float uTime;',
+    'uniform float uSpeed;',
+    'uniform float uNoiseIntensity;',
+    'uniform float uPixelRatio;',
+    'uniform float uWave;',
+    'uniform float uSize;',
+    'varying vec3 vPosition;',
+    'varying float vGlowValue;',
+    'vec4 permute(vec4 x){return mod(((x*34.0)+1.0)*x, 289.0);}',
+    'vec4 taylorInvSqrt(vec4 r){return 1.79284291400159 - 0.85373472095314 * r;}',
+    'float snoise(vec3 v){',
+    '  const vec2 C = vec2(1.0/6.0, 1.0/3.0);',
+    '  const vec4 D = vec4(0.0, 0.5, 1.0, 2.0);',
+    '  vec3 i = floor(v + dot(v, C.yyy));',
+    '  vec3 x0 = v - i + dot(i, C.xxx);',
+    '  vec3 g = step(x0.yzx, x0.xyz);',
+    '  vec3 l = 1.0 - g;',
+    '  vec3 i1 = min(g.xyz, l.zxy);',
+    '  vec3 i2 = max(g.xyz, l.zxy);',
+    '  vec3 x3 = x0 - D.yyy;',
+    '  vec3 x1 = x0 - i1 + 1.0 * C.xxx;',
+    '  vec3 x2 = x0 - i2 + 2.0 * C.xxx;',
+    '  i = mod(i, 289.0);',
+    '  vec4 p = permute(permute(permute(i.z + vec4(0.0, i1.z, i2.z, 1.0)) + i.y + vec4(0.0, i1.y, i2.y, 1.0)) + i.x + vec4(0.0, i1.x, i2.x, 1.0));',
+    '  float n_ = 0.142857142857;',
+    '  vec3 ns = n_ * D.wyz - D.xzx;',
+    '  vec4 j = p - 49.0 * floor(p * ns.z * ns.z);',
+    '  vec4 x_ = floor(j * ns.z);',
+    '  vec4 y_ = floor(j - 7.0 * x_);',
+    '  vec4 x = x_ * ns.x + ns.yyyy;',
+    '  vec4 y = y_ * ns.x + ns.yyyy;',
+    '  vec4 h = 1.0 - abs(x) - abs(y);',
+    '  vec4 b0 = vec4(x.xy, y.xy);',
+    '  vec4 b1 = vec4(x.zw, y.zw);',
+    '  vec4 s0 = floor(b0) * 2.0 + 1.0;',
+    '  vec4 s1 = floor(b1) * 2.0 + 1.0;',
+    '  vec4 sh = -step(h, vec4(0.0));',
+    '  vec4 a0 = b0.xzyw + s0.xzyw * sh.xxyy;',
+    '  vec4 a1 = b1.xzyw + s1.xzyw * sh.zzww;',
+    '  vec3 p0 = vec3(a0.xy, h.x);',
+    '  vec3 p1 = vec3(a0.zw, h.y);',
+    '  vec3 p2 = vec3(a1.xy, h.z);',
+    '  vec3 p3 = vec3(a1.zw, h.w);',
+    '  vec4 norm = taylorInvSqrt(vec4(dot(p0,p0), dot(p1,p1), dot(p2,p2), dot(p3,p3)));',
+    '  p0 *= norm.x; p1 *= norm.y; p2 *= norm.z; p3 *= norm.w;',
+    '  vec4 m = max(0.6 - vec4(dot(x0,x0), dot(x1,x1), dot(x2,x2), dot(x3,x3)), 0.0);',
+    '  m = m * m;',
+    '  return 42.0 * dot(m*m, vec4(dot(p0,x0), dot(p1,x1), dot(p2,x2), dot(p3,x3)));',
+    '}',
+    'void main() {',
+    '  vPosition = position;',
+    '  float t = uTime * uSpeed;',
+    '  float noise = snoise(vec3(position.x * 1.1 + t, position.y * 1.1 + t, position.z * 1.1));',
+    '  noise += 0.3 * snoise(vec3(position.x * 2.2 - t, position.y * 2.2, position.z * 2.2));',
+    '  float w = sin(position.x * 3.0 + t * 2.0) * cos(position.y * 3.0 - t * 1.6) + 0.5 * sin(position.z * 4.0 + t * 2.4) * cos(position.x * 2.0 + t);',
+    '  noise += uWave * 0.35 * w;',
+    '  vGlowValue = noise;',
+    '  vec3 displacedPosition = position + normalize(position) * noise * uNoiseIntensity;',
+    '  vec4 mvPosition = modelViewMatrix * vec4(displacedPosition, 1.0);',
+    '  gl_Position = projectionMatrix * mvPosition;',
+    '  gl_PointSize = (uSize * uPixelRatio) / -mvPosition.z;',
+    '}'
+  ].join('\n');
+
+  // --- 4. Fragment shader (your midnight purple -> neon magenta) ---
+  var fragmentShader = [
+    'uniform vec3 uDeep;',
+    'uniform vec3 uMid;',
+    'uniform vec3 uBright;',
+    'uniform vec3 uPeak;',
+    'uniform float uLinear;',
+    'varying vec3 vPosition;',
+    'varying float vGlowValue;',
+    'void main() {',
+    '  float dist = distance(gl_PointCoord, vec2(0.5));',
+    '  if (dist > 0.45) discard;',
+    '  float k = smoothstep(-0.2, 0.6, vGlowValue);',
+    '  vec3 c = mix(uDeep, uMid, smoothstep(0.0, 0.45, k));',
+    '  c = mix(c, uBright, smoothstep(0.45, 0.8, k));',
+    '  c = mix(c, uPeak, smoothstep(0.8, 1.0, k));',
+    '  c = mix(c, mix(uDeep, uBright, k), uLinear);',
+    '  gl_FragColor = vec4(c, 0.95);',
+    '}'
+  ].join('\n');
+
+  // --- 5. Material ---
+  var uniforms = {
+    uDeep: { value: new THREE.Vector3().fromArray(tone.deep) },
+    uMid: { value: new THREE.Vector3().fromArray(tone.mid) },
+    uBright: { value: new THREE.Vector3().fromArray(tone.bright) },
+    uPeak: { value: new THREE.Vector3().fromArray(tone.peak) },
+    uLinear: { value: tone.linear ? 1 : 0 },
+    uTime: { value: 0 },
+    uSpeed: { value: 1 },
+    uNoiseIntensity: { value: 0.52 },
+    uWave: { value: 0 },
+    uSize: { value: tone.light ? 5.5 : 4.5 },
+    uPixelRatio: { value: pr }
+  };
+  var material = new THREE.ShaderMaterial({
+    vertexShader: vertexShader,
+    fragmentShader: fragmentShader,
+    uniforms: uniforms,
+    transparent: true,
+    blending: (tone.light || tone.solid) ? THREE.NormalBlending : THREE.AdditiveBlending,
+    depthWrite: false
+  });
+
+  if (tone.overlay) {
+    // add light onto the page behind the canvas without darkening it
+    material.blending = THREE.CustomBlending;
+    material.blendEquation = THREE.AddEquation;
+    material.blendSrc = THREE.SrcAlphaFactor;
+    material.blendDst = THREE.OneFactor;
+    material.blendSrcAlpha = THREE.ZeroFactor;
+    material.blendDstAlpha = THREE.OneFactor;
+  }
+  var particleGlobe = new THREE.Points(geometry, material);
+  particleGlobe.rotation.x = 0.7;
+  particleGlobe.rotation.z = -0.3;
+  scene.add(particleGlobe);
+
+  // --- 6. Frame loop (pauses off-screen; one still frame for reduced motion) ---
+  var reduce = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  var clock = new THREE.Clock();
+  var raf = 0, visible = true, phase = 0;
+  var MODES = {
+    base:      { speed: 0.32, ripple: 0.52, wave: 0 },
+    voice:     { speed: 0.55, ripple: 0.40, wave: 0.9 },
+    rest:      { speed: 0.08, ripple: 0.18, wave: 0.2 },
+    listening: { speed: 0.75, ripple: 0.62, wave: 1 },
+    paused:    { speed: 0.10, ripple: 0.30, wave: 0.35 }
+  };
+  var live = container.dataset.live === '1';
+  var startMode = tone.light ? 'voice' : (live ? 'listening' : 'base');
+  var cur = Object.assign({}, MODES[startMode]);
+  var target = cur;
+
+  function render() {
+    var dt = Math.min(clock.getDelta(), 0.1);
+    var k = reduce ? 1 : Math.min(dt * 2.5, 1);
+    cur.speed += (target.speed - cur.speed) * k;
+    cur.ripple += (target.ripple - cur.ripple) * k;
+    cur.wave += (target.wave - cur.wave) * k;
+    phase += dt * cur.speed;
+    uniforms.uTime.value = phase;
+    uniforms.uNoiseIntensity.value = cur.ripple;
+    uniforms.uWave.value = cur.wave;
+    particleGlobe.rotation.y += dt * 0.04 * (cur.speed / 0.32);
+    renderer.render(scene, camera);
+  }
+  container._pillion = {
+    setMode: function (name) {
+      target = MODES[name] || MODES.base;
+      if (reduce) render();
+    }
+  };
+  function animate() {
+    render();
+    raf = (visible && !reduce) ? requestAnimationFrame(animate) : 0;
+  }
+  animate();
+
+  if ('IntersectionObserver' in window) {
+    new IntersectionObserver(function (entries) {
+      visible = entries[0].isIntersecting;
+      if (visible && !raf && !reduce) { clock.getDelta(); animate(); }
+    }).observe(container);
+  }
+
+  // --- 7. Resize to the box, not the window ---
+  function onResize() {
+    var n = size();
+    camera.aspect = n.w / n.h;
+    camera.updateProjectionMatrix();
+    renderer.setSize(n.w, n.h);
+    if (reduce || !raf) render();
+  }
+  if ('ResizeObserver' in window) new ResizeObserver(onResize).observe(container);
+  else window.addEventListener('resize', onResize);
+  }
+
+  // --- Iridescent pearl-chrome globe (solid mesh) ---
+  var CHROME_VERT = [
+    'uniform float uTime;',
+    'varying vec3 vNormal;',
+    'varying vec3 vViewPosition;',
+    'float mod289(float x){return x - floor(x * (1.0 / 289.0)) * 289.0;}',
+    'vec4 mod289(vec4 x){return x - floor(x * (1.0 / 289.0)) * 289.0;}',
+    'vec3 mod289(vec3 x){return x - floor(x * (1.0 / 289.0)) * 289.0;}',
+    'vec4 permute(vec4 x){return mod289(((x*34.0)+1.0)*x);}',
+    'vec4 taylorInvSqrt(vec4 r){return 1.79284291400159 - 0.85373472095314 * r;}',
+    'float snoise(vec3 v){',
+    '  const vec2 C = vec2(1.0/6.0, 1.0/3.0);',
+    '  const vec4 D = vec4(0.0, 0.5, 1.0, 2.0);',
+    '  vec3 i = floor(v + dot(v, C.yyy));',
+    '  vec3 x0 = v - i + dot(i, C.xxx);',
+    '  vec3 g = step(x0.yzx, x0.xyz);',
+    '  vec3 l = 1.0 - g;',
+    '  vec3 i1 = min(g.xyz, l.zxy);',
+    '  vec3 i2 = max(g.xyz, l.zxy);',
+    '  vec3 x1 = x0 - i1 + C.xxx;',
+    '  vec3 x2 = x0 - i2 + C.yyy;',
+    '  vec3 x3 = x0 - D.yyy;',
+    '  i = mod289(i);',
+    '  vec4 p = permute(permute(permute(i.z + vec4(0.0, i1.z, i2.z, 1.0)) + i.y + vec4(0.0, i1.y, i2.y, 1.0)) + i.x + vec4(0.0, i1.x, i2.x, 1.0));',
+    '  float n_ = 0.142857142857;',
+    '  vec3 ns = n_ * D.wyz - D.xzx;',
+    '  vec4 j = p - 49.0 * floor(p * ns.z * ns.z);',
+    '  vec4 x_ = floor(j * ns.z);',
+    '  vec4 y_ = floor(j - 7.0 * x_);',
+    '  vec4 x = x_ * ns.x + ns.yyyy;',
+    '  vec4 y = y_ * ns.x + ns.yyyy;',
+    '  vec4 h = 1.0 - abs(x) - abs(y);',
+    '  vec4 b0 = vec4(x.xy, y.xy);',
+    '  vec4 b1 = vec4(x.zw, y.zw);',
+    '  vec4 s0 = floor(b0) * 2.0 + 1.0;',
+    '  vec4 s1 = floor(b1) * 2.0 + 1.0;',
+    '  vec4 sh = -step(h, vec4(0.0));',
+    '  vec4 a0 = b0.xzyw + s0.xzyw * sh.xxyy;',
+    '  vec4 a1 = b1.xzyw + s1.xzyw * sh.zzww;',
+    '  vec3 p0 = vec3(a0.xy, h.x);',
+    '  vec3 p1 = vec3(a0.zw, h.y);',
+    '  vec3 p2 = vec3(a1.xy, h.z);',
+    '  vec3 p3 = vec3(a1.zw, h.w);',
+    '  vec4 norm = taylorInvSqrt(vec4(dot(p0,p0), dot(p1,p1), dot(p2,p2), dot(p3,p3)));',
+    '  p0 *= norm.x; p1 *= norm.y; p2 *= norm.z; p3 *= norm.w;',
+    '  vec4 m = max(0.6 - vec4(dot(x0,x0), dot(x1,x1), dot(x2,x2), dot(x3,x3)), 0.0);',
+    '  m = m * m;',
+    '  return 42.0 * dot(m*m, vec4(dot(p0,x0), dot(p1,x1), dot(p2,x2), dot(p3,x3)));',
+    '}',
+    'void main() {',
+    '  vNormal = normalize(normalMatrix * normal);',
+    '  vec3 noisePos = position * 1.6 + vec3(0.0, 0.0, uTime * 0.4);',
+    '  float noise = snoise(noisePos);',
+    '  float twist = sin(position.y * 3.8 + uTime * 0.7) * 0.15;',
+    '  vec3 newPosition = position + normal * (noise * 0.12 + twist);',
+    '  vec4 mvPosition = modelViewMatrix * vec4(newPosition, 1.0);',
+    '  vViewPosition = -mvPosition.xyz;',
+    '  gl_Position = projectionMatrix * mvPosition;',
+    '}'
+  ].join('\n');
+
+  var CHROME_FRAG = [
+    'uniform float uTime;',
+    'varying vec3 vNormal;',
+    'varying vec3 vViewPosition;',
+    'vec3 cosPalette(float t, vec3 a, vec3 b, vec3 c, vec3 d) { return a + b * cos(6.28318 * (c * t + d)); }',
+    'void main() {',
+    '  vec3 normal = normalize(vNormal);',
+    '  vec3 viewDir = normalize(vViewPosition);',
+    '  float fresnel = pow(1.0 - max(dot(normal, viewDir), 0.0), 3.0);',
+    '  float distortion = sin(normal.x * 3.5 + normal.y * 3.5 + uTime * 0.25) * 0.5 + 0.5;',
+    '  vec3 basePearlWhite = vec3(0.88, 0.86, 0.94);',
+    '  vec3 iridescentHologram = cosPalette(distortion + fresnel * 0.9, vec3(0.72, 0.68, 0.82), vec3(0.28, 0.26, 0.22), vec3(1.0), vec3(0.40, 0.22, 0.15));',
+    '  vec3 finalMaterialColor = mix(basePearlWhite, iridescentHologram, 0.6);',
+    '  float specularHighlight = pow(max(dot(reflect(-viewDir, normal), vec3(0.577)), 0.0), 40.0);',
+    '  finalMaterialColor += vec3(specularHighlight * 0.45);',
+    '  finalMaterialColor += vec3(fresnel * 0.4);',
+    '  gl_FragColor = vec4(finalMaterialColor, 1.0);',
+    '}'
+  ].join('\n');
+
+  function initChrome(container) {
+    function size() { return { w: container.clientWidth || 390, h: container.clientHeight || 262 }; }
+    var s = size();
+    var scene = new THREE.Scene();
+    var camera = new THREE.PerspectiveCamera(45, s.w / s.h, 0.1, 1000);
+    camera.position.z = 6.0;
+    var renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+    renderer.setSize(s.w, s.h);
+    container.appendChild(renderer.domElement);
+
+    var geometry = new THREE.SphereGeometry(1.7, 128, 128);
+    var material = new THREE.ShaderMaterial({ vertexShader: CHROME_VERT, fragmentShader: CHROME_FRAG, uniforms: { uTime: { value: 0 } } });
+    var mesh = new THREE.Mesh(geometry, material);
+    scene.add(mesh);
+
+    var reduce = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    var clock = new THREE.Clock();
+    var raf = 0, visible = true;
+    function render() {
+      var t = clock.getElapsedTime();
+      material.uniforms.uTime.value = t;
+      mesh.rotation.y = t * 0.04;
+      mesh.rotation.x = -t * 0.015;
+      renderer.render(scene, camera);
+    }
+    function loop() { render(); raf = (visible && !reduce) ? requestAnimationFrame(loop) : 0; }
+    loop();
+    if ('IntersectionObserver' in window) {
+      new IntersectionObserver(function (e) { visible = e[0].isIntersecting; if (visible && !raf && !reduce) loop(); }).observe(container);
+    }
+    function onResize() {
+      var n = size();
+      camera.aspect = n.w / n.h; camera.updateProjectionMatrix();
+      renderer.setSize(n.w, n.h);
+      if (reduce || !raf) render();
+    }
+    if ('ResizeObserver' in window) new ResizeObserver(onResize).observe(container);
+  }
+
+  // --- Swirled iridescent glass orb ---
+  var GLASS_COMMON = [
+    'uniform float uTime;',
+    'uniform float uAmp;',
+    'float ridge(vec3 p) {',
+    '  float a = atan(p.z, p.x) + p.y * 2.1 + 0.55 * sin(p.x * 1.6 + p.z * 0.9 + uTime * 0.3) + uTime * 0.18;',
+    '  float depth = 0.55 + 0.45 * sin(p.y * 1.4 - p.x * 0.8 + uTime * 0.22);',
+    '  return sin(a * 6.0 + sin(p.y * 2.3 + uTime * 0.4) * 1.3) * depth;',
+    '}'
+  ].join('\n');
+  var GLASS_VERT = [
+    GLASS_COMMON,
+    'varying vec3 vPos;',
+    'varying vec3 vN;',
+    'void main() {',
+    '  vec3 n = normalize(position);',
+    '  vec3 p = position + n * ridge(position) * 0.035 * (1.0 + uAmp * 2.2);',
+    '  vPos = p;',
+    '  vN = n;',
+    '  gl_Position = projectionMatrix * modelViewMatrix * vec4(p, 1.0);',
+    '}'
+  ].join('\n');
+  var GLASS_FRAG = [
+    GLASS_COMMON,
+    'varying vec3 vPos;',
+    'varying vec3 vN;',
+    'void main() {',
+    '  vec3 n = normalize(vN);',
+    '  float e = 0.02;',
+    '  float r0 = ridge(vPos);',
+    '  vec3 g = vec3(ridge(vPos + vec3(e,0,0)) - r0, ridge(vPos + vec3(0,e,0)) - r0, ridge(vPos + vec3(0,0,e)) - r0) / e;',
+    '  vec3 N = normalize(n - 0.09 * (g - dot(g, n) * n));',
+    '  vec3 V = normalize(cameraPosition - vPos);',
+    '  float ndv = max(dot(N, V), 0.0);',
+    '  float fres = pow(1.0 - ndv, 2.2);',
+    '  vec3 R = reflect(-V, N);',
+    // glass body: darker lavender core, pale rim
+    '  vec3 core = vec3(0.24, 0.23, 0.52);',
+    '  vec3 rim = vec3(0.86, 0.84, 1.00);',
+    '  vec3 col = mix(core, rim, clamp(fres * 1.2 + r0 * 0.10 + 0.10, 0.0, 1.0));',
+    // fake studio environment in the reflection
+    '  float sky = smoothstep(-0.1, 0.9, R.y);',
+    '  float band = smoothstep(0.55, 0.95, sin(R.x * 3.0 + R.y * 2.0) * 0.5 + 0.5);',
+    '  col += vec3(0.75, 0.74, 0.95) * sky * 0.35 + vec3(1.0) * band * 0.18;',
+    // thin-film iridescence along the flutes and the rim
+    '  float film = fres * 1.6 + r0 * 0.35 + dot(N, vec3(0.3, 0.6, 0.2)) * 0.8 + uTime * 0.03;',
+    '  vec3 irid = 0.5 + 0.5 * cos(6.28318 * (film + vec3(0.0, 0.33, 0.67)));',
+    '  float streak = smoothstep(0.35, 0.95, r0) * 0.6 + fres * 0.5;',
+    '  col = mix(col, irid * vec3(1.0, 0.92, 1.05), clamp(streak * (0.42 + uAmp * 0.25), 0.0, 0.62));',
+    // highlights: sharp key light + soft fill, broken up by the flutes
+    '  vec3 L1 = normalize(vec3(-0.5, 0.7, 0.6));',
+    '  vec3 L2 = normalize(vec3(0.6, -0.2, 0.7));',
+    '  float spec = pow(max(dot(R, L1), 0.0), 70.0) * 1.3 + pow(max(dot(R, L2), 0.0), 18.0) * 0.28;',
+    '  col += vec3(spec);',
+    '  col += vec3(0.9, 0.9, 1.0) * pow(fres, 3.0) * 0.35;',
+    '  gl_FragColor = vec4(min(col, vec3(1.0)), 0.96);',
+    '}'
+  ].join('\n');
+
+  function initGlass(container) {
+    function size() { return { w: container.clientWidth || 390, h: container.clientHeight || 262 }; }
+    var s = size();
+    var scene = new THREE.Scene();
+    var camera = new THREE.PerspectiveCamera(40, s.w / s.h, 0.1, 100);
+    camera.position.z = 6.0;
+    var renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+    renderer.setSize(s.w, s.h);
+    container.appendChild(renderer.domElement);
+    var material = new THREE.ShaderMaterial({
+      vertexShader: GLASS_VERT, fragmentShader: GLASS_FRAG,
+      uniforms: { uTime: { value: 0 }, uAmp: { value: 0 } }, transparent: true
+    });
+    var mesh = new THREE.Mesh(new THREE.SphereGeometry(1.55, 160, 160), material);
+    scene.add(mesh);
+    var reduce = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    var clock = new THREE.Clock();
+    var raf = 0, visible = true;
+    // voice-reactive state (defaults leave copy 5 exactly as before)
+    var voice = container.dataset.voiceOrb === '1';
+    var orb = container.parentNode;
+    var phase = 0, elapsed = 0;
+    var cur = { level: 0, speed: 1, scale: 1 };
+    var ctl = { mode: 'idle', getMicLevel: null };
+    container._voice = ctl;
+    function targets(t) {
+      var m = ctl.mode, lvl = 0, speed = 1, scale = 1;
+      if (m === 'listening') {
+        if (ctl.getMicLevel) lvl = ctl.getMicLevel();
+        else {
+          var syl = Math.max(0, Math.sin(t * 9.0)) * (0.55 + 0.45 * Math.sin(t * 2.3));
+          var gap = Math.sin(t * 0.8) > -0.55 ? 1 : 0.1;
+          lvl = Math.min(1, syl * gap * 1.1);
+        }
+        speed = 1.4 + lvl * 3.2; scale = 1.03 + lvl * 0.14;
+      } else if (m === 'thinking') {
+        lvl = 0.18; speed = 3.2; scale = 0.95;
+      } else if (m === 'speaking') {
+        lvl = 0.35 + 0.35 * Math.max(0, Math.sin(t * 6.5)) * (0.6 + 0.4 * Math.sin(t * 1.7));
+        speed = 1.6 + lvl * 1.5; scale = 1.0 + lvl * 0.08;
+      }
+      return { level: lvl, speed: speed, scale: scale };
+    }
+    function render() {
+      var dt = Math.min(clock.getDelta(), 0.1);
+      elapsed += dt;
+      if (!voice) { phase = elapsed; }
+      else {
+        var tg = targets(elapsed);
+        var fast = Math.min(dt * 10, 1), slow = Math.min(dt * 3, 1);
+        cur.level += (tg.level - cur.level) * (tg.level > cur.level ? fast : slow);
+        cur.speed += (tg.speed - cur.speed) * slow;
+        cur.scale += (tg.scale - cur.scale) * Math.min(dt * 6, 1);
+        phase += dt * cur.speed;
+        material.uniforms.uAmp.value = cur.level;
+        mesh.scale.setScalar(cur.scale);
+        orb.style.setProperty('--lvl', cur.level.toFixed(3));
+        var phone = container.closest('.phone');
+        if (phone) phone.style.setProperty('--lvl', cur.level.toFixed(3));
+      }
+      material.uniforms.uTime.value = phase;
+      renderer.render(scene, camera);
+    }
+    function loop() { render(); raf = (visible && !reduce) ? requestAnimationFrame(loop) : 0; }
+    loop();
+    if ('IntersectionObserver' in window) {
+      new IntersectionObserver(function (e) { visible = e[0].isIntersecting; if (visible && !raf && !reduce) loop(); }).observe(container);
+    }
+    function onResize() {
+      var n = size();
+      camera.aspect = n.w / n.h; camera.updateProjectionMatrix();
+      renderer.setSize(n.w, n.h);
+      if (reduce || !raf) render();
+    }
+    if ('ResizeObserver' in window) new ResizeObserver(onResize).observe(container);
+  }
+
+  document.querySelectorAll('.a .globe').forEach(function (el) {
+    if (el.dataset.kind === 'chrome') initChrome(el);
+    else if (el.dataset.kind === 'glass') initGlass(el);
+    else initGlobe(el);
+  });
+  wireMics();
+  wireRecorders();
+  wireVoice();
+
+  function wireVoice() {
+    document.querySelectorAll('.v7').forEach(function (phone) {
+      var btn = phone.querySelector('[data-voice-toggle]');
+      var label = phone.querySelector('.v7-label');
+      var orbEl = phone.querySelector('[data-voice-orb]');
+      var stream = null, audioCtx = null, timers = [];
+      function ctl() { return orbEl && orbEl._voice; }
+      function setMode(m, text) {
+        phone.dataset.voice = m;
+        label.textContent = text;
+        if (ctl()) ctl().mode = m;
+        var on = m === 'listening';
+        btn.setAttribute('aria-pressed', on ? 'true' : 'false');
+        btn.setAttribute('aria-label', on ? 'Stop talking' : 'Start talking');
+      }
+      function clearTimers() { timers.forEach(clearTimeout); timers = []; }
+      function stopMic() {
+        if (stream) stream.getTracks().forEach(function (t) { t.stop(); });
+        if (audioCtx) audioCtx.close();
+        stream = null; audioCtx = null;
+        if (ctl()) ctl().getMicLevel = null;
+      }
+      function startMic() {
+        if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) return;
+        navigator.mediaDevices.getUserMedia({ audio: true }).then(function (s) {
+          if (phone.dataset.voice !== 'listening') { s.getTracks().forEach(function (t) { t.stop(); }); return; }
+          stream = s;
+          audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+          var an = audioCtx.createAnalyser();
+          an.fftSize = 512;
+          audioCtx.createMediaStreamSource(s).connect(an);
+          var buf = new Uint8Array(an.fftSize);
+          if (ctl()) ctl().getMicLevel = function () {
+            an.getByteTimeDomainData(buf);
+            var sum = 0;
+            for (var i = 0; i < buf.length; i++) { var v = (buf[i] - 128) / 128; sum += v * v; }
+            return Math.min(1, Math.sqrt(sum / buf.length) * 7);
+          };
+        }).catch(function () { /* no mic permission: keep the built-in demo voice */ });
+      }
+      btn.addEventListener('click', function () {
+        clearTimers();
+        if (phone.dataset.voice === 'listening') {
+          stopMic();
+          setMode('thinking', 'Thinking');
+          timers.push(setTimeout(function () { setMode('speaking', 'Speaking'); }, 1400));
+          timers.push(setTimeout(function () { setMode('idle', 'Tap mic to talk'); }, 4600));
+        } else {
+          setMode('listening', 'Listening');
+          startMic();
+        }
+      });
+    });
+  }
+
+  function wireMics() {
+    document.querySelectorAll('[data-mic-toggle]').forEach(function (btn) {
+      btn.addEventListener('click', function () {
+        var phone = btn.closest('.phone');
+        var listening = phone.dataset.state !== 'listening';
+        phone.dataset.state = listening ? 'listening' : 'paused';
+        btn.setAttribute('aria-pressed', listening ? 'true' : 'false');
+        btn.setAttribute('aria-label', listening ? 'Pause listening' : 'Start listening');
+        var label = phone.querySelector('.v2-pill-text');
+        if (label) label.textContent = listening ? 'Listening' : 'Paused';
+        var globe = phone.querySelector('.globe');
+        if (globe && globe._pillion) globe._pillion.setMode(listening ? 'listening' : 'paused');
+      });
+    });
+  }
+
+  function wireRecorders() {
+    document.querySelectorAll('.v3').forEach(function (phone) {
+      var sec = 0, timer = 0;
+      var toggle = phone.querySelector('[data-rec-toggle]');
+      var stateEl = phone.querySelector('.v3-state');
+      var clockEl = phone.querySelector('.v3-timer');
+      var globe = phone.querySelector('.globe');
+      function fmt(n) { return (n < 10 ? '0' : '') + n; }
+      function paint() { clockEl.textContent = fmt(Math.floor(sec / 60)) + ':' + fmt(sec % 60); }
+      function set(on, label) {
+        phone.dataset.rec = on ? 'on' : 'off';
+        toggle.setAttribute('aria-pressed', on ? 'true' : 'false');
+        toggle.setAttribute('aria-label', on ? 'Pause recording' : 'Start recording');
+        stateEl.textContent = label || (on ? 'Listening...' : 'Paused');
+        clearInterval(timer);
+        if (on) timer = setInterval(function () { sec++; paint(); }, 1000);
+        if (globe && globe._pillion) globe._pillion.setMode(on ? 'voice' : 'rest');
+      }
+      toggle.addEventListener('click', function () { set(phone.dataset.rec !== 'on'); });
+      phone.querySelector('[data-rec-cancel]').addEventListener('click', function () { sec = 0; paint(); set(false, 'Cancelled'); });
+      phone.querySelector('[data-rec-done]').addEventListener('click', function () { set(false, 'Sent'); sec = 0; paint(); });
+      paint();
+      set(true);
+    });
+  }
+})();
+</script>
+
+</body>
+</html>

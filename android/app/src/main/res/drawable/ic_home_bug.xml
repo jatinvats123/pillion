@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Line icon from design/pillion-home-handoff.html (24 px grid; .refined svg{stroke-width:2}). -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    <path
+        android:strokeColor="@android:color/white"
+        android:strokeWidth="2"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"
+        android:pathData="M12,7A5,5 0 0 1 17,12V15A5,5 0 0 1 12,20A5,5 0 0 1 7,15V12A5,5 0 0 1 12,7Z" />
+    <path
+        android:strokeColor="@android:color/white"
+        android:strokeWidth="2"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"
+        android:pathData="M9,7V5.5a3,3 0 0 1 6,0V7M3,13h4M17,13h4M4,8l3,2M20,8l-3,2M4,19l3,-2M20,19l-3,-2M12,11v9" />
+</vector>
