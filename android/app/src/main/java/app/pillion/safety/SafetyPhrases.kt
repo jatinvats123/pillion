@@ -94,7 +94,10 @@ object SafetyPhrases {
     }
 }
 
-/** What Pillion says itself during a safety alert, in Hindi (Devanagari) and English. */
+/**
+ * What Pillion says itself during a safety alert, in Hindi (Devanagari) and English. English lines
+ * spell numbers out: the agent's voice (Sarvam, hi-IN) reads digits in Hindi even in English text.
+ */
 data class SafetyLine(val hindi: String, val english: String) {
     /** Unknown language: Hindi (most riders speak it) then English. */
     fun forLanguage(language: RiderLanguage): String = when (language) {
@@ -109,20 +112,20 @@ data class SafetyLine(val hindi: String, val english: String) {
         // if the mic picked them up, Pillion must not cancel or send its own alert.
         val ARE_YOU_OK_AGAIN = SafetyLine(
             "ठीक हो तो जवाब दो, या बटन दबाओ। वरना 10 second में आपके contacts को message जाएगा।",
-            "If you're okay, answer me or press the button. Otherwise your contacts get a message in 10 seconds.",
+            "If you're okay, answer me or press the button. Otherwise your contacts get a message in ten seconds.",
         )
         val MANUAL_COUNTDOWN = SafetyLine(
             "5 second में आपके contacts को message जाएगा। रोकना हो तो बटन दबाइए।",
-            "Messaging your contacts in 5 seconds. Press the button to stop.",
+            "Messaging your contacts in five seconds. Press the button to stop.",
         )
         val CANCELLED = SafetyLine("ठीक है, SOS रोक दिया। ध्यान से चलिए।", "Okay, SOS cancelled. Ride safe.")
         val SENDING_NOW = SafetyLine("अभी SOS भेज रही हूँ।", "Sending SOS now.")
-        val SOS_FAILED = SafetyLine("SOS SMS नहीं जा पाया। 112 पर call कीजिए।", "The SOS SMS could not be sent. Call 112.")
+        val SOS_FAILED = SafetyLine("SOS SMS नहीं जा पाया। 112 पर call कीजिए।", "The SOS SMS could not be sent. Call one one two.")
         val NO_SMS_PERMISSION = SafetyLine(
             "SMS की permission बंद है, SOS नहीं भेज सकती। 112 पर call कीजिए।",
-            "SMS permission is off, so I can't send the SOS. Call 112.",
+            "SMS permission is off, so I can't send the SOS. Call one one two.",
         )
-        val NO_CONTACTS = SafetyLine("कोई emergency contact नहीं है। 112 पर call कीजिए।", "There's no emergency contact. Call 112.")
+        val NO_CONTACTS = SafetyLine("कोई emergency contact नहीं है। 112 पर call कीजिए।", "There's no emergency contact. Call one one two.")
         val RIDER_OK_TOLD = SafetyLine("ठीक है, मैंने आपके contacts को बता दिया कि आप ठीक हैं।", "Okay, I've told your contacts you're okay.")
         val NOT_SET_UP = SafetyLine(
             "ध्यान दें: SOS के लिए कोई emergency contact नहीं है। App में contact जोड़ लीजिए।",
