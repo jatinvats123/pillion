@@ -1,0 +1,58 @@
+# Render Blueprint: the Pillion backend as one always-on web service (Starter plan, Singapore).
+# One instance only: rides, pending SMS/call confirmations and Live Guardian links live in memory.
+# Secrets are marked sync: false: Render asks for them when the Blueprint is created, and they stay
+# in the dashboard (Environment tab), never in git.
+services:
+  - type: web
+    name: pillion-backend
+    runtime: node
+    plan: starter
+    region: singapore
+    rootDir: backend
+    buildCommand: npm ci
+    startCommand: npm start
+    healthCheckPath: /health
+    autoDeploy: false # a deploy restarts the process and ends live rides and SOS links
+    envVars:
+      - key: NODE_VERSION
+        value: "22"
+      - key: HOST
+        value: 0.0.0.0
+      - key: AGORA_APP_ID
+        sync: false
+      - key: AGORA_APP_CERTIFICATE
+        sync: false
+      - key: AGORA_AREA
+        value: AP
+      - key: AGORA_AGENT_UID
+        value: "1000"
+      - key: LLM_PROVIDER
+        value: openai
+      - key: VOICE_STACK
+        value: sarvam
+      - key: SARVAM_API_KEY
+        sync: false
+      - key: MAPS_PROVIDER
+        value: geoapify
+      - key: GEOAPIFY_API_KEY
+        sync: false
+      - key: JEV_ENABLED
+        value: "true"
+      - key: JEV_API_KEY
+        sync: false
+      - key: PUBLIC_BASE_URL
+        sync: false # https://<service>.onrender.com, set after the first deploy
+      - key: GUARDIAN_ENABLED
+        value: "true"
+      - key: APP_KEY
+        sync: false
+      - key: RIDES_ENABLED
+        value: "true"
+      - key: MAX_RIDE_MINUTES
+        value: "10"
+      - key: MAX_RIDES_PER_DAY
+        value: "40"
+      - key: MAX_AGENT_MINUTES_PER_DAY
+        value: "300"
+      - key: MAX_CONCURRENT_RIDES
+        value: "5"

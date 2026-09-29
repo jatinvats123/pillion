@@ -7,7 +7,6 @@ import {
   guardianEnabled,
   joinCredentials,
   linkFor,
-  rateLimiter,
   registerLink,
   rideHasLinks,
   riderIsOk,
@@ -17,7 +16,17 @@ import {
   updateLocation,
 } from './guardian.js';
 import { jevEnabled } from './jev.js';
-import { answerFromPhone, rideForToken } from './rides.js';
+import {
+  clientIp,
+  geocodeAllowed,
+  hasAppKey,
+  publicMode,
+  rateLimiter,
+  refuseRideStart,
+  rideCallAllowed,
+  translateAllowed,
+} from './limits.js';
+import { answerFromPhone, liveRideCount, rideForToken } from './rides.js';
 import { onRiderTurn, runTool } from './tools.js';
 import { toEnglish } from './translate.js';
 
@@ -43,14 +52,23 @@ app.get('/health', (_req, res) => {
     jev: jevEnabled(),
     guardian: guardianEnabled(),
     maps: mapsConfigured() ? config.maps.provider : false,
+    mode: publicMode() ? 'public' : 'local',
+    rides: config.limits.ridesEnabled,
     activeAgents: activeAgentCount(),
   });
 });
 
-// The tunnel is there for Agora's tool calls. Starting and stopping agents (which bills the Agora
-// account) stays on this laptop and its local network (the phone over Wi-Fi when HOST=0.0.0.0):
-// requests forwarded by Cloudflare carry cf-ray / cf-connecting-ip, the rest must come from a
-// private address.
+// Starting and stopping agents bills the Agora account.
+// Public mode (APP_KEY set, e.g. on Render): only with the release app's key, from anywhere. The
+// socket address means nothing there (every request comes from the host's own proxy).
+// Local mode: the tunnel is there for Agora's tool calls, so these stay on this laptop and its local
+// network (the phone over Wi-Fi when HOST=0.0.0.0): requests forwarded by Cloudflare carry cf-ray /
+// cf-connecting-ip, the rest must come from a private address.
+function appOnly(req, res, next) {
+  if (publicMode()) return hasAppKey(req) ? next() : res.status(401).json({ error: 'app_key_required' });
+  return localOnly(req, res, next);
+}
+
 function localOnly(req, res, next) {
   const viaTunnel = Boolean(req.get('cf-ray') || req.get('cf-connecting-ip'));
   if (viaTunnel && !config.allowPublicRideStart) {
@@ -74,6 +92,7 @@ function withRide(handler) {
     const token = req.get('authorization')?.replace(/^Bearer\s+/i, '');
     const ride = rideForToken(token);
     if (!ride) return res.status(401).json({ error: 'unknown_or_ended_ride' });
+    if (!rideCallAllowed(ride)) return res.status(429).json({ error: 'slow_down' });
     return handler(ride, req, res);
   };
 }
@@ -122,7 +141,7 @@ app.post(
     const startedAt = Date.now();
     try {
       await ride.session.say(text, { priority, interruptable: false });
-      console.log(`[say] ride=${ride.channel.slice(-6)} ${priority} in ${Date.now() - startedAt} ms: "${text.slice(0, 60)}"`);
+      console.log(`[say] ride=${ride.channel.slice(-6)} ${priority} in ${Date.now() - startedAt} ms (${text.length} chars)`);
       res.json({ ok: true });
     } catch (error) {
       console.warn(`[say] failed: ${describe(error)}`);
@@ -138,9 +157,10 @@ app.post(
   withRide(async (ride, req, res) => {
     const text = String(req.body?.text ?? '').trim();
     if (!text) return res.status(400).json({ error: 'text is required' });
+    if (!translateAllowed(ride)) return res.status(429).json({ error: 'slow_down' });
     try {
       const { english, ms } = await toEnglish(text);
-      console.log(`[translate] ride=${ride.channel.slice(-6)} ${ms ? `${ms} ms` : 'cached'}: "${text.slice(0, 40)}" → "${english.slice(0, 40)}"`);
+      console.log(`[translate] ride=${ride.channel.slice(-6)} ${ms ? `${ms} ms` : 'cached'} (${text.length} chars)`);
       res.json({ english });
     } catch (error) {
       console.warn(`[translate] failed: ${error.message}`);
@@ -150,8 +170,9 @@ app.post(
 );
 
 // The rider set a scanned order: where is its drop? Asked before or during a ride, so it needs no
-// ride token; local network only, like starting a ride (it spends the maps quota).
-app.post('/order/geocode', localOnly, async (req, res) => {
+// ride token; the same access as starting a ride (it spends the maps quota), rate-limited per IP.
+app.post('/order/geocode', appOnly, async (req, res) => {
+  if (!geocodeAllowed(req)) return res.status(429).json({ error: 'slow_down' });
   const address = String(req.body?.address ?? '').trim().slice(0, 300);
   const area = String(req.body?.area ?? '').trim().slice(0, 80) || null;
   const lat = Number(req.body?.near?.lat);
@@ -162,7 +183,7 @@ app.post('/order/geocode', localOnly, async (req, res) => {
   const startedAt = Date.now();
   try {
     const result = await geocodeAddress(address, { area, near });
-    console.log(`[geocode] ${result.status} in ${Date.now() - startedAt} ms${near ? '' : ' (no rider position)'}${result.area ? ` · ${result.area}` : ''}`);
+    console.log(`[geocode] ${result.status} in ${Date.now() - startedAt} ms${near ? '' : ' (no rider position)'}`);
     res.json(result);
   } catch (error) {
     const code = error instanceof MapsError ? error.message.split(':')[0] : 'internal_error';
@@ -239,8 +260,7 @@ function publicPage(req, res, next) {
     'X-Content-Type-Options': 'nosniff',
     'X-Frame-Options': 'DENY',
   });
-  const ip = req.get('cf-connecting-ip') || req.socket.remoteAddress;
-  if (!pageLimit(ip)) return res.status(429).json({ error: 'slow_down' });
+  if (!pageLimit(clientIp(req))) return res.status(429).json({ error: 'slow_down' });
   return next();
 }
 
@@ -265,9 +285,15 @@ app.post('/g/:token/join', publicPage, (req, res) => {
   return res.json(credentials);
 });
 
+// /debug/*: local mode by default; off in public mode unless DEBUG_ROUTES=true.
+function debugOnly(_req, res, next) {
+  return config.debugRoutes ? next() : res.status(404).json({ error: 'not_found' });
+}
+
 // Testing without speaking: sends text into the ride's LLM as if the rider had said it.
 app.post(
   '/debug/think',
+  debugOnly,
   withRide(async (ride, req, res) => {
     const text = String(req.body?.text ?? '').trim();
     if (!text || !ride.session) return res.status(400).json({ error: 'text and a started ride are required' });
@@ -282,6 +308,7 @@ app.post(
 
 app.get(
   '/debug/history',
+  debugOnly,
   withRide(async (ride, _req, res) => {
     try {
       res.json(await ride.session.getHistory());
@@ -291,7 +318,12 @@ app.get(
   }),
 );
 
-app.post('/agent/start', localOnly, async (_req, res) => {
+app.post('/agent/start', appOnly, async (req, res) => {
+  const refused = refuseRideStart(req, liveRideCount());
+  if (refused) {
+    console.log(`[start] refused: ${refused.error}`);
+    return res.status(refused.status).json({ error: refused.error });
+  }
   const startedAt = Date.now();
   try {
     const ride = await startRide();
@@ -299,11 +331,12 @@ app.post('/agent/start', localOnly, async (_req, res) => {
     res.json(ride);
   } catch (error) {
     console.error(`[start] failed: ${describe(error)}`);
-    res.status(502).json({ error: 'Could not start the Pillion agent.', detail: describe(error) });
+    // 424, not 502: Cloudflare swaps an origin's 502 for its own HTML page. No Agora detail in public mode.
+    res.status(424).json({ error: 'Could not start the Pillion agent.', ...(publicMode() ? {} : { detail: describe(error) }) });
   }
 });
 
-app.post('/agent/stop', localOnly, async (req, res) => {
+app.post('/agent/stop', appOnly, async (req, res) => {
   const agentId = req.body?.agentId;
   if (typeof agentId !== 'string' || !agentId.trim()) {
     return res.status(400).json({ error: 'agentId is required.' });
@@ -314,7 +347,8 @@ app.post('/agent/stop', localOnly, async (req, res) => {
     res.json({ ok: true });
   } catch (error) {
     console.error(`[stop] agent=${agentId} failed: ${describe(error)}`);
-    res.status(502).json({ error: 'Could not stop the Pillion agent.', detail: describe(error) });
+    // 424, not 502: Cloudflare swaps an origin's 502 for its own HTML page. No Agora detail in public mode.
+    res.status(424).json({ error: 'Could not stop the Pillion agent.', ...(publicMode() ? {} : { detail: describe(error) }) });
   }
 });
 
@@ -328,7 +362,7 @@ const secrets = [
 ].filter(Boolean);
 
 // Debug app builds mirror their per-turn latency breakdown here (ASR / LLM / TTS from Agora metrics).
-app.post('/debug/latency', localOnly, (req, res) => {
+app.post('/debug/latency', debugOnly, appOnly, (req, res) => {
   const line = String(req.body?.line ?? '').slice(0, 300);
   if (line) console.log(`[latency] ${line}`);
   res.json({ ok: true });
@@ -347,11 +381,17 @@ const server = app.listen(config.port, config.host, () => {
   console.log(`Pillion backend on http://${config.host}:${config.port} (voice: ${config.voiceStack}, llm: ${config.llm.provider === 'openai' ? config.llm.openaiModel : config.gemini.model})`);
 });
 
-// Don't leave agents running (and billing) when the server is stopped with Ctrl+C.
-async function shutdown() {
-  console.log(`Stopping ${activeAgentCount()} active agent(s)...`);
+// Don't leave agents running (and billing) when the server stops: Ctrl+C locally, SIGTERM from the
+// host on a deploy or restart (Render waits 30 s). Open keep-alive connections mustn't hold it up.
+let stopping = false;
+async function shutdown(signal) {
+  if (stopping) return;
+  stopping = true;
+  console.log(`${signal}: stopping ${activeAgentCount()} active agent(s)...`);
+  setTimeout(() => process.exit(0), 10_000).unref();
   await stopAllRides();
   server.close(() => process.exit(0));
+  server.closeIdleConnections();
 }
 process.on('SIGINT', shutdown);
 process.on('SIGTERM', shutdown);

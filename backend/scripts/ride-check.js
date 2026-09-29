@@ -3,7 +3,7 @@
 // Phone-backed tools fail with phone_not_responding (no app in this ride) — that checks the error path.
 // With no rider in the channel the agent idle-stops ~30 s after start, so give 2–3 sentences per run.
 //   node scripts/ride-check.js "Next drop kitni door hai?" "What did I earn today?"
-// BACKEND_URL defaults to http://127.0.0.1:3000.
+// BACKEND_URL defaults to http://127.0.0.1:3000; set APP_KEY too for a public-mode backend.
 import { setTimeout as sleep } from 'node:timers/promises';
 
 const base = (process.env.BACKEND_URL ?? 'http://127.0.0.1:3000').replace(/\/+$/, '');
@@ -16,7 +16,11 @@ if (!sentences.length) {
 async function call(method, path, body, rideToken) {
   const res = await fetch(base + path, {
     method,
-    headers: { 'Content-Type': 'application/json', ...(rideToken && { Authorization: `Bearer ${rideToken}` }) },
+    headers: {
+      'Content-Type': 'application/json',
+      ...(process.env.APP_KEY && { 'X-Pillion-Key': process.env.APP_KEY }),
+      ...(rideToken && { Authorization: `Bearer ${rideToken}` }),
+    },
     body: body && JSON.stringify(body),
   });
   const json = await res.json().catch(() => ({}));

@@ -61,6 +61,18 @@ export const config = {
   guardian: {
     enabled: env('GUARDIAN_ENABLED', 'false').toLowerCase() === 'true',
   },
+  // Public deployment (see limits.js). APP_KEY set = public mode: starting rides and geocoding need
+  // the release app's key, from anywhere. Empty = local mode: the laptop / Wi-Fi / tunnel rules.
+  appKey: env('APP_KEY'),
+  limits: {
+    ridesEnabled: env('RIDES_ENABLED', 'true').toLowerCase() !== 'false', // the kill switch
+    maxRideMinutes: Number(env('MAX_RIDE_MINUTES', '10')), // 0 = no limit
+    maxRidesPerDay: Number(env('MAX_RIDES_PER_DAY', '40')),
+    maxAgentMinutesPerDay: Number(env('MAX_AGENT_MINUTES_PER_DAY', '300')),
+    maxConcurrentRides: Number(env('MAX_CONCURRENT_RIDES', '5')),
+  },
+  // /debug/* (think, history, latency). Default: on in local mode, off in public mode.
+  debugRoutes: env('DEBUG_ROUTES', env('APP_KEY') ? 'false' : 'true').toLowerCase() === 'true',
   // Filler words play when the LLM hasn't started answering after this long (in practice: tool calls).
   fillerWaitMs: Number(env('FILLER_WAIT_MS', '1500')),
   port: Number(env('PORT', '3000')),
@@ -88,6 +100,15 @@ export function validateConfig() {
   }
   if (!(config.fillerWaitMs >= 100 && config.fillerWaitMs <= 10000)) problems.push('FILLER_WAIT_MS must be 100–10000');
   if (!['geoapify', 'google'].includes(config.maps.provider)) problems.push('MAPS_PROVIDER must be "geoapify" or "google"');
+  if (config.appKey && config.appKey.length < 24) problems.push('APP_KEY must be at least 24 characters');
+  for (const [name, value] of Object.entries({
+    MAX_RIDE_MINUTES: config.limits.maxRideMinutes,
+    MAX_RIDES_PER_DAY: config.limits.maxRidesPerDay,
+    MAX_AGENT_MINUTES_PER_DAY: config.limits.maxAgentMinutesPerDay,
+    MAX_CONCURRENT_RIDES: config.limits.maxConcurrentRides,
+  })) {
+    if (!(Number.isInteger(value) && value >= 0)) problems.push(`${name} must be a whole number ≥ 0 (0 = no limit)`);
+  }
 
   if (problems.length) {
     throw new Error(`Invalid backend/.env:\n  - ${problems.join('\n  - ')}`);
@@ -105,5 +126,7 @@ export function configWarnings() {
   if (!mapsConfigured()) warnings.push(`${mapsKey} is not set (MAPS_PROVIDER=${config.maps.provider}): ETA and nearby places will fail`);
   if (config.guardian.enabled && !config.publicBaseUrl) warnings.push('GUARDIAN_ENABLED needs PUBLIC_BASE_URL: SOS SMS go without a live link');
   if (config.jev.enabled && !config.jev.apiKey) warnings.push('JEV_API_KEY is not set: Jev routing is off');
+  if (!config.limits.ridesEnabled) warnings.push('RIDES_ENABLED=false: new rides are refused');
+  if (config.appKey && config.debugRoutes) warnings.push('DEBUG_ROUTES=true in public mode: /debug/* is reachable with a ride token');
   return warnings;
 }

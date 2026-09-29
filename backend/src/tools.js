@@ -314,13 +314,13 @@ export function onRiderTurn(ride, { turnId, text }) {
       if (entry) prefetch(ride, entry[0], () => entry[1](ride));
       const confirm = jev.confirm ? `, confirm=${jev.confirm} (yes ${jev.confirmYes.toFixed(2)})` : '';
       console.log(
-        `[jev] ${tag(ride, turn)} "${clip(text)}" → ${jev.intent} ${jev.confidence.toFixed(2)}${confirm} in ${jev.ms} ms${entry ? ` · prefetching ${entry[0]}` : ''}`,
+        `[jev] ${tag(ride, turn)} ${words(text)} → ${jev.intent} ${jev.confidence.toFixed(2)}${confirm} in ${jev.ms} ms${entry ? ` · prefetching ${entry[0]}` : ''}`,
       );
       return jev;
     })
     .catch((error) => {
       if (!(error instanceof JevSkipped)) console.error('[jev] unexpected', error);
-      console.log(`[jev] ${tag(ride, turn)} "${clip(text)}" → skipped (${error.message}); LLM routes alone`);
+      console.log(`[jev] ${tag(ride, turn)} ${words(text)} → skipped (${error.message}); LLM routes alone`);
       return { skipped: error.message };
     })
     .then((result) => (turn.jevResult = result));
@@ -370,5 +370,6 @@ function logTool(ride, turn, name, outcome, startedAt, ctx) {
 }
 
 const tag = (ride, turn) => `ride=${ride.channel.slice(-6)} turn=${turn?.id ?? '-'}`;
-const clip = (text) => (text.length > 60 ? `${text.slice(0, 57)}...` : text);
+// Logs never carry what the rider said (names, numbers, addresses): only its length.
+const words = (text) => `(${text.split(/\s+/).filter(Boolean).length} words)`;
 const round1 = (n) => Math.round(n * 10) / 10;

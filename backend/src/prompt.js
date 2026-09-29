@@ -55,6 +55,8 @@ export const GREETING = 'नमस्ते! मैं Pillion हूँ, आप
 // family tree" in Sarvam's English subtitle; this wording comes out as "Your family is on the line.")
 export const FAMILY_JOINED = 'आपके घरवाले line पे हैं।';
 export const WELCOME_BACK = 'मैं वापस हूँ। कुछ चाहिए तो बोलिए।';
+// Public demo: said once when MAX_RIDE_MINUTES is reached, before the agent stops.
+export const RIDE_TIME_UP = (minutes) => `Demo ride के ${minutes} minute पूरे हुए। Voice के लिए नई ride start कीजिए।`;
 export const RESUMED_CONTEXT =
   "Context: an SOS was sent earlier in this ride and the rider's family just talked with them on the line. Don't bring it up unless the rider does.";
 

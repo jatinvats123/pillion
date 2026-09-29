@@ -19,10 +19,13 @@ import {
   FILLER_PROMPT,
   GREETING,
   RESUMED_CONTEXT,
+  RIDE_TIME_UP,
   SYSTEM_PROMPT,
   WELCOME_BACK,
 } from './prompt.js';
+import { agentStarted, agentStopped, rideStarted } from './limits.js';
 import { createRide, endRide, rideForAgent, rideForToken } from './rides.js';
+import { sendToRider } from './rtm.js';
 import { toolDefinitions } from './tools.js';
 
 // Created lazily so config validation can report problems before the SDK does.
@@ -162,6 +165,8 @@ export async function startRide() {
     endRide(ride);
     throw error;
   }
+  rideStarted();
+  startRideTimer(ride);
 
   return {
     appId: config.agora.appId,
@@ -174,6 +179,8 @@ export async function startRide() {
     rideToken: ride.token,
     // Live Guardian: base of the SOS link (<base>/g/<token>); null = feature off, no link.
     guardianBaseUrl: config.guardian.enabled ? config.publicBaseUrl : null,
+    // The voice stops after this long (0 = no limit); safety keeps running on the phone.
+    maxRideMinutes: config.limits.maxRideMinutes,
   };
 }
 
@@ -192,7 +199,53 @@ async function startAgent(ride, resumed) {
   ride.agentIds.add(agentId);
   ride.session = session;
   activeAgents.add(agentId);
+  agentStarted(agentId);
   return agentId;
+}
+
+/** Stops one agent and counts its minutes towards the day's cap. */
+async function stopAgent(agentId) {
+  try {
+    await agoraClient().stopAgent(agentId);
+  } finally {
+    activeAgents.delete(agentId);
+    agentStopped(agentId);
+  }
+}
+
+const TIME_UP_LINE_MS = 7000; // the time-up line: first audio ~1–1.5 s + ~5 s of speech
+
+/**
+ * MAX_RIDE_MINUTES after the start, the voice ends: the agent says so and is stopped; a Live
+ * Guardian handoff can't bring it back. The ride itself stays (its links keep working until they
+ * expire, and the phone keeps crash detection and SOS); the app gets a `pillion.notice`.
+ */
+function startRideTimer(ride) {
+  const minutes = config.limits.maxRideMinutes;
+  if (!minutes) return;
+  ride.limitTimer = setTimeout(() => {
+    ride.timeUp = true;
+    ride.handoff = ride.handoff
+      .then(() => endVoiceForTimeLimit(ride, minutes))
+      .catch((error) => console.warn(`[limit] ride=${ride.channel.slice(-6)} stop failed: ${describeError(error)}`));
+  }, minutes * 60_000);
+  ride.limitTimer.unref();
+}
+
+async function endVoiceForTimeLimit(ride, minutes) {
+  if (!rideForToken(ride.token)) return;
+  sendToRider(ride.uid, { object: 'pillion.notice', code: 'ride_time_limit', minutes }).catch((error) =>
+    console.warn(`[limit] notice not sent: ${error.message}`),
+  );
+  if (!ride.session) return; // family on the line: the agent is already off and stays off
+  await ride.session.say(RIDE_TIME_UP(minutes), { priority: 'INTERRUPT', interruptable: false }).catch(() => {});
+  await new Promise((resolve) => setTimeout(resolve, TIME_UP_LINE_MS));
+  const agentId = ride.agentId;
+  if (!agentId || !rideForToken(ride.token)) return;
+  ride.session = null;
+  ride.agentId = null;
+  await stopAgent(agentId);
+  console.log(`[limit] ride=${ride.channel.slice(-6)} reached ${minutes} min: agent stopped`);
 }
 
 const FAMILY_LINE_MS = 4000; // the family line: Sarvam's first audio ~1–1.5 s + ~2 s of speech
@@ -223,19 +276,17 @@ async function pauseForFamily(ride) {
   const agentId = ride.agentId;
   ride.session = null;
   ride.agentId = null;
-  await agoraClient().stopAgent(agentId);
-  activeAgents.delete(agentId);
+  await stopAgent(agentId);
   console.log(`[guardian] ride=${ride.channel.slice(-6)} family on the line: agent stopped`);
 }
 
 async function resumeAfterFamily(ride) {
-  if (ride.familyPresent || ride.session || !rideForToken(ride.token)) return;
+  if (ride.familyPresent || ride.session || ride.timeUp || !rideForToken(ride.token)) return;
   const startedAt = Date.now();
   const agentId = await startAgent(ride, true);
   if (!rideForToken(ride.token)) {
     // The ride ended while the agent started.
-    await agoraClient().stopAgent(agentId).catch(() => {});
-    activeAgents.delete(agentId);
+    await stopAgent(agentId).catch(() => {});
     return;
   }
   console.log(`[guardian] ride=${ride.channel.slice(-6)} family left: agent back in ${Date.now() - startedAt} ms`);
@@ -253,9 +304,8 @@ export async function stopRide(agentId) {
   const ride = rideForAgent(agentId);
   endRide(ride); // first, so a handoff in flight doesn't start a new agent
   const current = ride ? ride.agentId : agentId;
-  if (!current) return; // paused for family: no agent running
-  await agoraClient().stopAgent(current);
-  activeAgents.delete(current);
+  if (!current) return; // paused for family or over the time limit: no agent running
+  await stopAgent(current);
 }
 
 export async function stopAllRides() {

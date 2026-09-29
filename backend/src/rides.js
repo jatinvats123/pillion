@@ -32,6 +32,8 @@ export function createRide({ channel, uid }) {
     turn: null, // latest final rider transcript (+ Jev's reading of it)
     pendingAction: null, // SMS or call waiting for the rider's "yes"
     familyPresent: false, // Live Guardian: family is in the channel
+    timeUp: false, // MAX_RIDE_MINUTES reached: the voice has ended for this ride
+    limitTimer: null,
     handoff: Promise.resolve(), // agent stop/restart steps, one after another
   };
   rides.set(ride.token, ride);
@@ -39,6 +41,9 @@ export function createRide({ channel, uid }) {
 }
 
 export const rideForToken = (token) => (token ? rides.get(token) : undefined);
+
+/** Rides with a running agent (paused-for-family and timed-out rides don't count). */
+export const liveRideCount = () => [...rides.values()].filter((ride) => ride.agentId).length;
 
 export function rideForAgent(agentId) {
   for (const ride of rides.values()) if (ride.agentIds.has(agentId)) return ride;
@@ -48,6 +53,7 @@ export function rideForAgent(agentId) {
 export function endRide(ride) {
   if (!ride) return;
   rides.delete(ride.token);
+  clearTimeout(ride.limitTimer);
   for (const [id, wait] of ride.waiting) {
     clearTimeout(wait.timer);
     wait.reject(new PhoneError('ride_ended'));

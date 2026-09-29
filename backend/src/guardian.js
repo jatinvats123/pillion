@@ -119,22 +119,6 @@ export function joinCredentials(link) {
   return { appId: config.agora.appId, channel: link.channel, uid, token, riderUid: link.riderUid };
 }
 
-/** Fixed-window request counter per key (IP), for the public /g/* routes. */
-export function rateLimiter({ max, windowMs }) {
-  const hits = new Map();
-  return (key) => {
-    const now = Date.now();
-    const entry = hits.get(key);
-    if (!entry || now - entry.start >= windowMs) {
-      if (hits.size > 10_000) hits.clear();
-      hits.set(key, { start: now, count: 1 });
-      return true;
-    }
-    entry.count += 1;
-    return entry.count <= max;
-  };
-}
-
 function liveLinksOf(ride) {
   return [...links.values()].filter((link) => link.rideToken === ride.token && Date.now() < link.expiresAt && !link.riderOkAt);
 }
