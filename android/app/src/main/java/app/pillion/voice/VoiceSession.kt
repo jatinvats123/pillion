@@ -121,6 +121,11 @@ class VoiceSession(context: Context) {
     /** Each final rider transcript, once per turn (the backend's Jev router reads these). */
     val riderTurns: SharedFlow<RiderTurn> = _riderTurns.asSharedFlow()
 
+    /** Set when the server said this ride's voice time is up (the agent leaving is then expected). */
+    @Volatile
+    var timeLimitMinutes: Int? = null
+        private set
+
     private val _serverRequests = MutableSharedFlow<JSONObject>(extraBufferCapacity = 16, onBufferOverflow = BufferOverflow.DROP_OLDEST)
     /** `pillion.request` messages: the backend asking the phone to act (GPS, SMS, call…) for a tool. */
     val serverRequests: SharedFlow<JSONObject> = _serverRequests.asSharedFlow()
@@ -288,6 +293,7 @@ class VoiceSession(context: Context) {
         latencyTracker.reset()
         _agentState.value = AgentState.Unknown
         _agentPresent.value = false
+        timeLimitMinutes = null
     }
 
     /**
@@ -440,6 +446,11 @@ class VoiceSession(context: Context) {
         when (json.optString("object")) {
             "pillion.request" -> _serverRequests.tryEmit(json)
             "pillion.action" -> showActionLine(json.optString("text"), failed = !json.optBoolean("ok", true))
+            // The public demo server ends the voice after its time limit; the agent leaves next.
+            "pillion.notice" -> if (json.optString("code") == "ride_time_limit") {
+                timeLimitMinutes = json.optInt("minutes")
+                showActionLine("⏱ Demo voice time is up", failed = false)
+            }
         }
     }
 

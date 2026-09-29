@@ -308,6 +308,7 @@ fun HomeOrderCard(
     onUseDemo: () -> Unit,
     setAside: Order?,
     onRestore: () -> Unit,
+    onTrySample: () -> Unit,
 ) {
     val c = Home.colors
     HomeGlassCard(
@@ -368,24 +369,28 @@ fun HomeOrderCard(
             setAside != null -> backToOrderLabel(setAside) to onRestore
             else -> null
         }
-        if (link != null) {
-            Box(
-                contentAlignment = Alignment.CenterStart,
-                modifier = Modifier
-                    .heightIn(min = 48.dp)
-                    .clip(RoundedCornerShape(8.dp))
-                    .clickable(role = Role.Button, onClick = link.second)
-                    .padding(horizontal = 4.dp),
-            ) {
-                Text(
-                    link.first,
-                    style = HomeType.button.copy(textDecoration = TextDecoration.Underline),
-                    color = c.link,
-                )
-            }
+        FlowRow(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            if (link != null) CardLink(link.first, link.second)
+            // The real scanner on a built-in screen with invented details (no delivery app needed).
+            CardLink(stringResource(R.string.order_try_sample), onTrySample)
         }
         // margin-top -4
         Text(stringResource(R.string.order_share_hint), style = HomeType.hint, color = c.hint, modifier = Modifier.pullUp(4.dp))
+    }
+}
+
+/** An underlined text link in the order card, 48 dp tall. */
+@Composable
+private fun CardLink(text: String, onClick: () -> Unit) {
+    Box(
+        contentAlignment = Alignment.CenterStart,
+        modifier = Modifier
+            .heightIn(min = 48.dp)
+            .clip(RoundedCornerShape(8.dp))
+            .clickable(role = Role.Button, onClick = onClick)
+            .padding(horizontal = 4.dp),
+    ) {
+        Text(text, style = HomeType.button.copy(textDecoration = TextDecoration.Underline), color = Home.colors.link)
     }
 }
 

@@ -33,7 +33,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
 
-enum class ScanSource { Share, Gallery, Camera, TestImage, Manual }
+enum class ScanSource { Share, Gallery, Camera, TestImage, Sample, Manual }
 
 enum class ScanFailure { Unreadable, NoOrderFound }
 

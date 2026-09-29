@@ -3,6 +3,7 @@ package app.pillion.ride
 import android.content.Context
 import android.util.Log
 import app.pillion.data.BackendApi
+import app.pillion.data.installId
 import app.pillion.data.DropLocation
 import app.pillion.data.Order
 import app.pillion.data.RideCredentials
@@ -40,12 +41,14 @@ import org.json.JSONObject
 /** Starts and ends a ride: the backend owns the agent, [voice] owns the realtime connection. */
 class RideRepository(
     context: Context,
-    private val api: BackendApi = BackendApi(),
+    private val api: BackendApi = BackendApi(installId(context)),
 ) {
     private val appContext = context.applicationContext
     val safety = appContext.pillion.safety
     val voice = VoiceSession(appContext)
     val orders = appContext.pillion.orders
+    /** The server is slow to answer at a ride start (a hosted server starting up). */
+    val serverWaking = api.waking
     private val location = RiderLocation(appContext)
     private val earnings = appContext.pillion.db
     private val actions = DeviceActions(appContext, orders, earnings, safety) { customer, delivered ->

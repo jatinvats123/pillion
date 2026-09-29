@@ -7,8 +7,8 @@ import kotlin.math.sin
 import kotlin.math.sqrt
 
 /**
- * DEBUG BUILDS ONLY — synthetic sensor traces for the crash detector's unit tests and the debug
- * "Simulate crash" button. They are NOT recordings: each event is modelled from simple physics
+ * Synthetic sensor traces for the crash detector's unit tests, the debug "Simulate crash" button
+ * and Settings' "Try the crash check" (every build). They are NOT recordings: each event is modelled from simple physics
  * (gravity turning with the phone, impact pulses, road vibration, 1 Hz GPS that lags) plus noise.
  * They test the detector's logic; real-world accuracy needs recorded rides.
  */

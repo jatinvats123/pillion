@@ -7,12 +7,12 @@ param([string]$Serial)
 $adb = Join-Path $env:LOCALAPPDATA 'Android\Sdk\platform-tools\adb.exe'
 if (-not (Test-Path $adb)) { throw "adb not found at $adb" }
 $target = if ($Serial) { @('-s', $Serial) } else { @() }
-$source = Join-Path $PSScriptRoot '..\android\app\src\debug\assets\order_samples'
+$sources = 'debug', 'main' | ForEach-Object { Join-Path $PSScriptRoot "..\android\app\src\$_\assets\order_samples" }
 $dest = '/sdcard/Pictures/PillionSamples'
 
 $sdk = [int](& $adb @target shell getprop ro.build.version.sdk).Trim()
 & $adb @target shell mkdir -p $dest
-Get-ChildItem $source -Filter '*.png' | ForEach-Object {
+Get-ChildItem $sources -Filter '*.png' | ForEach-Object {
     & $adb @target push $_.FullName "$dest/$($_.Name)" 2>&1 | Out-Null
     # Android 10 and older pick new files up from this broadcast (newer versions stall on it).
     if ($sdk -le 29) { & $adb @target shell am broadcast -a android.intent.action.MEDIA_SCANNER_SCAN_FILE -d "file://$dest/$($_.Name)" | Out-Null }

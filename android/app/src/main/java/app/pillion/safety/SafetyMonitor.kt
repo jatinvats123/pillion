@@ -272,8 +272,11 @@ class SafetyMonitor(
         return ManualSosResult.Started((config.manualCountdownMs / 1000).toInt(), contacts.contacts.value.size)
     }
 
-    /** Debug builds: feeds a synthetic crash trace through the ride's real detector. */
-    fun simulateCrash(): Boolean = sensors?.replay(DebugTraces.crash()) ?: false
+    /**
+     * Feeds a synthetic crash trace through the ride's real detector: the debug sheet's "Simulate
+     * crash" and Settings' "Try the crash check". False when no ride is running.
+     */
+    fun simulateCrash(): Boolean = sensors?.replay(SyntheticTraces.crash()) ?: false
 
     /** Debug builds: a note in the ride transcript (e.g. the sensor recorder's file). */
     fun debugNote(text: String) {

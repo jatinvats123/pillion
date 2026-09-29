@@ -88,6 +88,7 @@ class DeviceActions(
     private fun order(): JSONObject {
         val order = orders.activeOrder() ?: throw DeviceActionException("no_active_order")
         return JSONObject().put("customer_name", order.customerName).put("drop_address", order.dropAddress).apply {
+            if (order.isSample) put("sample_order", true)
             if (order.isDemo) return@apply
             when (val drop = order.drop) {
                 is DropLocation.Found -> {
@@ -138,7 +139,7 @@ class DeviceActions(
     }
 
     private fun customerNumber(order: Order): String =
-        order.customerPhone.filter { it.isDigit() || it == '+' }.takeIf { it.length >= 7 }
+        if (order.isSample) throw DeviceActionException("sample_order") else order.customerPhone.filter { it.isDigit() || it == '+' }.takeIf { it.length >= 7 }
             ?: throw DeviceActionException(if (order.phoneMasked) "customer_number_masked" else "no_customer_number")
 
     private fun granted(permission: String) =

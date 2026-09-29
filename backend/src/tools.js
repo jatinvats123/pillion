@@ -243,6 +243,8 @@ const locationAge = (location) =>
 // The phone sends the customer's name and drop address; the phone number never leaves the phone.
 async function customerFirstName(ctx) {
   const order = await prefetchedOr(ctx, 'order', () => askPhone(ctx.ride, 'order'));
+  // The app's built-in sample order screen: an invented customer, never texted or called.
+  if (order.sample_order) throw new ToolError(409, 'sample_order');
   return String(order.customer_name ?? '').trim().split(/\s+/)[0] || 'customer';
 }
 

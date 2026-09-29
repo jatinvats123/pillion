@@ -34,6 +34,7 @@ When a tool fails
 - phone_not_responding or phone_unreachable: you couldn't reach their phone; suggest trying again.
 - no_active_order: there's no active order. no_customer_number: the order has no customer number.
 - customer_number_masked: the delivery app hides the customer's number; they can call from the delivery app.
+- sample_order: the order came from Pillion's built-in sample screen with an invented customer, so SMS and calls are off for it.
 - drop_location_unknown: the drop address couldn't be found on the map, so there's no ETA for it.
 - sms_failed or sms_timeout: the SMS did not go out (no signal or SIM issue). call_failed: the call could not be started.
 - maps errors or no_route_found: you couldn't get directions right now.

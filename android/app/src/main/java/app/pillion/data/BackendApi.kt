@@ -1,11 +1,20 @@
 package app.pillion.data
 
+import android.content.Context
 import android.location.Location
+import androidx.core.content.edit
 import app.pillion.BuildConfig
 import java.io.IOException
 import java.net.HttpURLConnection
 import java.net.URL
+import java.util.UUID
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.json.JSONObject
 
@@ -22,9 +31,28 @@ data class RideCredentials(
     val rideToken: String,
     /** Live Guardian: base of the SOS link (`<base>/g/<token>`); null when the feature is off. */
     val guardianBaseUrl: String? = null,
+    /** The public demo server stops the voice this many minutes in; 0 = no limit. */
+    val maxRideMinutes: Int = 0,
 )
 
-class BackendException(message: String) : IOException(message)
+/** [code]: the server's error code (`demo_limit_reached`, `slow_down`…); [message] is fit to show. */
+class BackendException(message: String, val code: String = "") : IOException(message)
+
+/** The public server's refusals, as the rider reads them (safety never depends on the server). */
+private fun refusalMessage(code: String): String? = when (code) {
+    "demo_limit_reached" -> "Demo limit reached for today. Try again later: crash detection and SOS still work."
+    "rides_paused" -> "Pillion's voice is paused right now. Crash detection and SOS still work."
+    "server_busy" -> "Pillion is busy with other riders. Try again in a minute."
+    "slow_down" -> "Too many tries. Wait a minute, then tap Retry."
+    "app_key_required" -> "This version of Pillion can't use the server. Please update the app."
+    else -> null
+}
+
+/** A random id for this install, not tied to the phone or the rider: the server's per-device rate limit. */
+fun installId(context: Context): String {
+    val prefs = context.getSharedPreferences("install", Context.MODE_PRIVATE)
+    return prefs.getString("id", null) ?: UUID.randomUUID().toString().also { prefs.edit { putString("id", it) } }
+}
 
 /**
  * Talks to the Pillion Node backend. All secrets stay on the backend.
@@ -35,10 +63,15 @@ class BackendException(message: String) : IOException(message)
  * whenever the phone sleeps — doesn't cut the phone off from the backend.
  */
 class BackendApi(
+    private val deviceId: String = "",
     private val baseUrls: List<String> = BuildConfig.BACKEND_URL.split(',').map { it.trim().trimEnd('/') }.filter { it.isNotEmpty() },
 ) {
     @Volatile
     private var baseUrl = baseUrls.first()
+
+    private val _waking = MutableStateFlow(false)
+    /** The server is slow to answer /health (a host starting up): shown instead of "Connecting". */
+    val waking: StateFlow<Boolean> = _waking.asStateFlow()
 
     suspend fun startAgent(): RideCredentials {
         baseUrl = reachableBaseUrl()
@@ -52,6 +85,7 @@ class BackendApi(
             agentId = json.getString("agentId"),
             rideToken = json.getString("rideToken"),
             guardianBaseUrl = json.optString("guardianBaseUrl").takeIf { it.startsWith("https://") },
+            maxRideMinutes = json.optInt("maxRideMinutes", 0),
         )
     }
 
@@ -142,6 +176,9 @@ class BackendApi(
             doOutput = true
             setRequestProperty("Content-Type", "application/json")
             rideToken?.let { setRequestProperty("Authorization", "Bearer $it") }
+            // The public server's speed bump (it ships in the APK) and its per-install rate limit.
+            if (BuildConfig.APP_KEY.isNotEmpty()) setRequestProperty("X-Pillion-Key", BuildConfig.APP_KEY)
+            if (deviceId.isNotEmpty()) setRequestProperty("X-Pillion-Device", deviceId)
         }
         try {
             connection.outputStream.use { it.write(body.toString().toByteArray()) }
@@ -149,8 +186,8 @@ class BackendApi(
             val stream = if (code in 200..299) connection.inputStream else connection.errorStream
             val text = stream?.bufferedReader()?.use { it.readText() }.orEmpty()
             if (code !in 200..299) {
-                val message = runCatching { JSONObject(text).optString("error") }.getOrNull().orEmpty()
-                throw BackendException(message.ifBlank { "Pillion server error ($code)." })
+                val error = runCatching { JSONObject(text).optString("error") }.getOrNull().orEmpty()
+                throw BackendException(refusalMessage(error) ?: error.ifBlank { "Pillion server error ($code)." }, error)
             }
             JSONObject(text)
         } finally {
@@ -158,9 +195,26 @@ class BackendApi(
         }
     }
 
-    /** The first base URL whose /health answers. If none does, says so (with the addresses, in debug builds). */
-    private suspend fun reachableBaseUrl(): String = withContext(Dispatchers.IO) {
-        baseUrls.firstOrNull(::answersHealth) ?: throw BackendException(
+    /**
+     * The first base URL whose /health answers. The last one gets longer (a hosted server may be
+     * starting up), with [waking] set after a few seconds. If none answers, says so (with the
+     * addresses, in debug builds).
+     */
+    private suspend fun reachableBaseUrl(): String = coroutineScope {
+        val slow = launch {
+            delay(WAKING_AFTER_MS)
+            _waking.value = true
+        }
+        try {
+            withContext(Dispatchers.IO) {
+                baseUrls.withIndex().firstOrNull { (index, url) ->
+                    answersHealth(url, if (index == baseUrls.lastIndex) LAST_HEALTH_TIMEOUT_MS else HEALTH_TIMEOUT_MS)
+                }?.value
+            }
+        } finally {
+            slow.cancel()
+            _waking.value = false
+        } ?: throw BackendException(
             if (BuildConfig.DEBUG) {
                 "Can't reach the Pillion server (tried ${baseUrls.joinToString { it.substringAfter("://") }})."
             } else {
@@ -169,10 +223,10 @@ class BackendApi(
         )
     }
 
-    private fun answersHealth(url: String): Boolean = runCatching {
+    private fun answersHealth(url: String, timeoutMs: Int): Boolean = runCatching {
         val connection = (URL("$url/health").openConnection() as HttpURLConnection).apply {
-            connectTimeout = HEALTH_TIMEOUT_MS
-            readTimeout = HEALTH_TIMEOUT_MS
+            connectTimeout = timeoutMs
+            readTimeout = timeoutMs
         }
         try {
             connection.responseCode == 200
@@ -183,5 +237,7 @@ class BackendApi(
 
     private companion object {
         const val HEALTH_TIMEOUT_MS = 2_000
+        const val LAST_HEALTH_TIMEOUT_MS = 45_000
+        const val WAKING_AFTER_MS = 3_000L
     }
 }

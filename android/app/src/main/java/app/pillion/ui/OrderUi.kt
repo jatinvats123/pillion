@@ -69,6 +69,7 @@ fun ActiveOrderCard(
     onUseDemo: () -> Unit,
     setAside: Order?,
     onRestore: () -> Unit,
+    onTrySample: () -> Unit,
 ) {
     val colors = Pillion.colors
     PillionCard {
@@ -110,6 +111,7 @@ fun ActiveOrderCard(
             } else if (setAside != null) {
                 TextButton(onClick = onRestore, modifier = Modifier.heightIn(min = 48.dp)) { Text(backToOrderLabel(setAside)) }
             }
+            TextButton(onClick = onTrySample, modifier = Modifier.heightIn(min = 48.dp)) { Text(stringResource(R.string.order_try_sample)) }
         }
         Text(stringResource(R.string.order_share_hint), style = MaterialTheme.typography.bodySmall, color = colors.inkSecondary)
     }
@@ -119,6 +121,7 @@ fun ActiveOrderCard(
 @Composable
 fun orderLabel(order: Order): String = when {
     order.isDemo -> stringResource(R.string.order_demo)
+    order.isSample -> stringResource(R.string.order_sample)
     order.orderId.isNotBlank() -> "${stringResource(R.string.order_current)} · ${stringResource(R.string.order_id, order.orderId)}"
     else -> stringResource(R.string.order_current)
 }
@@ -230,6 +233,7 @@ private fun OrderReviewForm(review: ScanState.Review, onConfirm: (OrderDraft) ->
                     ScanSource.Share -> R.string.order_review_share
                     ScanSource.Camera -> R.string.order_review_camera
                     ScanSource.Manual -> R.string.order_review_manual
+                    ScanSource.Sample -> R.string.order_review_sample
                     ScanSource.Gallery, ScanSource.TestImage -> R.string.order_review_gallery
                 }
             ),

@@ -25,6 +25,7 @@
     <string name="debug_voice_preview_off">off (real voice)</string>
     <string name="debug_ask">Ask Pillion \"next drop kitna door?\" (typed)</string>
     <string name="status_connecting">Connecting</string>
+    <string name="status_waking">Waking up the server…</string>
     <string name="status_listening">Listening</string>
     <string name="status_thinking">Thinking</string>
     <string name="status_speaking">Speaking</string>
@@ -148,6 +149,17 @@
     <string name="settings_subtitles_note">Translated by Sarvam through the Pillion server. Off saves those calls; the voice is unchanged.</string>
     <string name="settings_battery">Battery</string>
     <string name="settings_battery_ok">Battery optimisation is off for Pillion: crash detection keeps running with the screen off.</string>
+    <string name="settings_try_crash">Try the crash check</string>
+    <string name="settings_try_crash_body">Runs the real crash check from a test sensor trace: alarm, “Aap theek ho?” and a 20-second countdown. Say “main theek hoon” or tap I’M OK to stop it.</string>
+    <string name="settings_try_crash_needs_ride">Start a ride first: the crash check runs during a ride.</string>
+    <string name="settings_try_crash_button">Try the crash check</string>
+    <string name="settings_try_crash_confirm_title">This can send a real SOS</string>
+    <plurals name="settings_try_crash_confirm">
+        <item quantity="one">If nobody answers in 20 seconds, Pillion sends a REAL SMS with your location to your emergency contact, and a live link if the voice is connected. Tell them it’s a test first.</item>
+        <item quantity="other">If nobody answers in 20 seconds, Pillion sends a REAL SMS with your location to your %d emergency contacts, and a live link if the voice is connected. Tell them it’s a test first.</item>
+    </plurals>
+    <string name="settings_try_crash_confirm_no_contacts">You have no emergency contacts, so no SMS can go out: the alarm, voice check and countdown still run.</string>
+    <string name="settings_try_crash_start">Start crash check</string>
     <string name="settings_about">About</string>
     <string name="settings_version">Pillion %1$s</string>
     <string name="settings_about_body">Built for the Agora Voice AI Hackathon. Voice by Agora Conversational AI, speech by Sarvam, answers by gpt-4o-mini. Crash detection, SOS and order scan run on this phone.</string>
@@ -191,8 +203,10 @@
     <string name="permission_call_body">Pillion needs it to call your customer after you say yes, and to go quiet during calls.</string>
     <string name="permission_allow">Allow</string>
 
-    <string name="test_order_title">Test order (seeded)</string>
-    <string name="test_order_phone">Customer number for SMS/call tests</string>
+    <string name="test_order_title">Demo order: test number</string>
+    <string name="test_order_body">The demo order has no customer number, so it can’t reach a stranger. To try “message the customer” and “call the customer”, put in a number you own, like your second phone. It stays on this phone.</string>
+    <string name="test_order_phone">Your test number</string>
+    <string name="test_order_not_active">Used when the demo order is the active order.</string>
     <string name="save">Save</string>
 
     <string name="notification_channel_ride">Active ride</string>
@@ -282,6 +296,9 @@
     <!-- Order scan: customer details from the delivery app's order screen. -->
     <string name="order_current">Current order</string>
     <string name="order_demo">Demo order (sample)</string>
+    <string name="order_sample">Sample order screen (invented)</string>
+    <string name="order_try_sample">Try a sample order screen</string>
+    <string name="order_review_sample">Read from a built-in sample order screen with invented details. SMS and calls are off for it.</string>
     <string name="order_id">Order %1$s</string>
     <string name="order_no_number">No customer number</string>
     <string name="order_number_masked">Number masked in the delivery app</string>

@@ -43,14 +43,12 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
@@ -91,7 +89,6 @@ import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
@@ -347,6 +344,7 @@ fun RideRoute(
             if (context.granted(Manifest.permission.CAMERA)) onOpenCamera() else cameraPermissionLauncher.launch(Manifest.permission.CAMERA)
         }
     }
+    val onTrySample = { if (viewModel.scanAllowed()) viewModel.scanSample() }
     RideScreen(
         state = state,
         voiceState = voiceState,
@@ -370,10 +368,10 @@ fun RideRoute(
         },
         setupIssueCount = setupIssues.size,
         orderCard = {
-            ActiveOrderCard(order = order, locatingDrop = locatingDrop, onScanScreenshot = onScanScreenshot, onScanCamera = onScanCamera, onUseDemo = viewModel::useDemoOrder, setAside = setAsideOrder, onRestore = viewModel::backToScannedOrder)
+            ActiveOrderCard(order = order, locatingDrop = locatingDrop, onScanScreenshot = onScanScreenshot, onScanCamera = onScanCamera, onUseDemo = viewModel::useDemoOrder, setAside = setAsideOrder, onRestore = viewModel::backToScannedOrder, onTrySample = onTrySample)
         },
         homeOrderCard = {
-            HomeOrderCard(order = order, locatingDrop = locatingDrop, onScanScreenshot = onScanScreenshot, onScanCamera = onScanCamera, onUseDemo = viewModel::useDemoOrder, setAside = setAsideOrder, onRestore = viewModel::backToScannedOrder)
+            HomeOrderCard(order = order, locatingDrop = locatingDrop, onScanScreenshot = onScanScreenshot, onScanCamera = onScanCamera, onUseDemo = viewModel::useDemoOrder, setAside = setAsideOrder, onRestore = viewModel::backToScannedOrder, onTrySample = onTrySample)
         },
         scanPanel = if (scanState == ScanState.Idle) {
             null
@@ -392,7 +390,6 @@ fun RideRoute(
             {
                 DebugSafetyCard(viewModel = viewModel, rideActive = state.rideActive)
                 DebugScanCard(onScan = viewModel::scanImage)
-                if (order.isDemo && !state.rideActive) TestOrderCard(order, viewModel::setTestCustomerPhone)
             }
         } else {
             null
@@ -459,7 +456,7 @@ private fun RideScreen(
     val alertOn = safetyState != SafetyState.Idle
     // Ending keeps the ride layout ("Ending…") until the ride is really over.
     val inRide = state.rideActive || state.status == RideStatus.Ending
-    val status = rideStatusOf(if (previewing) RideStatus.Listening else state.status, voiceState, alertOn, muted, inRide)
+    val status = rideStatusOf(if (previewing) RideStatus.Listening else state.status, voiceState, alertOn, muted, inRide, state.serverWaking)
     val globeLevel = rememberGlobeLevel()
     var sheet by remember { mutableStateOf(Sheet.None) }
     LaunchedEffect(scanPanel != null) { if (scanPanel != null) sheet = Sheet.None }
@@ -613,11 +610,19 @@ private data class ShownStatus(@StringRes val label: Int, val dot: Dot, @StringR
 
 private enum class Dot { Idle, Listening, Thinking, Speaking, Alert }
 
-private fun rideStatusOf(status: RideStatus, voice: RideVoiceState, alertOn: Boolean, muted: Boolean, inRide: Boolean): ShownStatus = when {
+private fun rideStatusOf(
+    status: RideStatus,
+    voice: RideVoiceState,
+    alertOn: Boolean,
+    muted: Boolean,
+    inRide: Boolean,
+    serverWaking: Boolean,
+): ShownStatus = when {
     !inRide -> ShownStatus(R.string.status_idle, Dot.Idle, R.string.orb_dormant)
     alertOn -> ShownStatus(R.string.status_alert, Dot.Alert, R.string.orb_alert)
     status == RideStatus.VoiceOffline -> ShownStatus(R.string.status_voice_offline, Dot.Idle, R.string.orb_offline)
     status == RideStatus.Reconnecting -> ShownStatus(R.string.status_reconnecting, Dot.Idle, R.string.orb_offline)
+    status == RideStatus.Connecting && serverWaking -> ShownStatus(R.string.status_waking, Dot.Idle, R.string.orb_connecting)
     status == RideStatus.Connecting -> ShownStatus(R.string.status_connecting, Dot.Idle, R.string.orb_connecting)
     status == RideStatus.Ending -> ShownStatus(R.string.ending_ride, Dot.Idle, R.string.orb_offline)
     status == RideStatus.FamilyOnLine -> ShownStatus(R.string.status_family, Dot.Idle, R.string.orb_family)
@@ -1336,29 +1341,6 @@ private fun DebugSwitch(label: String, checked: Boolean, onChange: (Boolean) -> 
     Row(verticalAlignment = Alignment.CenterVertically) {
         Text(label, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
         Switch(checked = checked, onCheckedChange = onChange)
-    }
-}
-
-/** Debug builds: the seeded order, with its customer number editable so SMS/call tests reach you. */
-@Composable
-private fun TestOrderCard(order: Order, onSavePhone: (String) -> Unit) {
-    var phone by rememberSaveable(order.customerPhone) { mutableStateOf(order.customerPhone) }
-    PillionCard {
-        Text(stringResource(R.string.test_order_title), style = MaterialTheme.typography.titleMedium)
-        Text("${order.customerName} · ${order.dropAddress}", style = MaterialTheme.typography.bodyMedium)
-        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(Space.s)) {
-            OutlinedTextField(
-                value = phone,
-                onValueChange = { phone = it },
-                label = { Text(stringResource(R.string.test_order_phone)) },
-                singleLine = true,
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone),
-                modifier = Modifier.weight(1f),
-            )
-            TextButton(onClick = { onSavePhone(phone) }, enabled = phone != order.customerPhone) {
-                Text(stringResource(R.string.save))
-            }
-        }
     }
 }
 

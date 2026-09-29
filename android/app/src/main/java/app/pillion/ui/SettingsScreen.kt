@@ -11,13 +11,16 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
@@ -28,10 +31,12 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LifecycleEventEffect
@@ -39,6 +44,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import app.pillion.BuildConfig
 import app.pillion.R
 import app.pillion.data.ThemeMode
+import app.pillion.safety.SafetyState
 import app.pillion.pillion
 import app.pillion.ui.components.PillButton
 import app.pillion.ui.components.PillionCard
@@ -136,6 +142,12 @@ fun SettingsRoute(onBack: () -> Unit) {
                 }
             }
 
+            SectionTitle(stringResource(R.string.test_order_title), Modifier.padding(top = Space.m))
+            DemoOrderNumber()
+
+            SectionTitle(stringResource(R.string.settings_try_crash), Modifier.padding(top = Space.m))
+            TryCrashCheck(onStarted = onBack)
+
             SectionTitle(stringResource(R.string.settings_about), Modifier.padding(top = Space.m))
             PillionCard {
                 Text(
@@ -162,6 +174,97 @@ fun SettingsRoute(onBack: () -> Unit) {
                 }
             }
         }
+    }
+}
+
+/**
+ * The demo order has no customer number (so it can't reach a stranger). To try "message the
+ * customer" and "call the customer", the rider gives it a number they own. Kept on this phone.
+ */
+@Composable
+private fun DemoOrderNumber() {
+    val orders = LocalContext.current.pillion.orders
+    val order by orders.order.collectAsStateWithLifecycle()
+    var saved by rememberSaveable { mutableStateOf(orders.demoCustomerPhone()) }
+    var phone by rememberSaveable { mutableStateOf(saved) }
+    val colors = Pillion.colors
+    PillionCard {
+        Text(stringResource(R.string.test_order_body), style = MaterialTheme.typography.bodyMedium, color = colors.ink)
+        OutlinedTextField(
+            value = phone,
+            onValueChange = { phone = it },
+            label = { Text(stringResource(R.string.test_order_phone)) },
+            singleLine = true,
+            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone),
+            modifier = Modifier.fillMaxWidth(),
+        )
+        if (!order.isDemo) Text(stringResource(R.string.test_order_not_active), style = MaterialTheme.typography.bodySmall, color = colors.inkSecondary)
+        PillButton(
+            stringResource(R.string.save),
+            onClick = {
+                orders.setDemoCustomerPhone(phone)
+                saved = phone.trim()
+            },
+            enabled = phone.trim() != saved,
+            container = colors.surfaceHigh,
+            content = colors.ink,
+            minHeight = 48.dp,
+        )
+    }
+}
+
+/**
+ * The real crash check from a synthetic trace, for riders and judges who won't crash to try it:
+ * the ride's detector, alarm, "Aap theek ho?" and countdown, and a REAL SOS if nobody answers,
+ * so it asks first. Needs a running ride (the detector runs only then); back to the ride on start.
+ */
+@Composable
+private fun TryCrashCheck(onStarted: () -> Unit) {
+    val context = LocalContext.current
+    val safety = context.pillion.safety
+    val contacts by context.pillion.contacts.contacts.collectAsStateWithLifecycle()
+    val safetyState by safety.state.collectAsStateWithLifecycle()
+    var confirming by remember { mutableStateOf(false) }
+    var needsRide by remember { mutableStateOf(false) }
+    val colors = Pillion.colors
+    PillionCard {
+        Text(stringResource(R.string.settings_try_crash_body), style = MaterialTheme.typography.bodyMedium, color = colors.ink)
+        if (needsRide) Text(stringResource(R.string.settings_try_crash_needs_ride), style = MaterialTheme.typography.bodyMedium, color = colors.caution)
+        PillButton(
+            stringResource(R.string.settings_try_crash_button),
+            onClick = {
+                needsRide = !safety.rideActive
+                if (!needsRide) confirming = true
+            },
+            enabled = safetyState == SafetyState.Idle,
+            container = colors.surfaceHigh,
+            content = colors.ink,
+            minHeight = 48.dp,
+        )
+    }
+    if (confirming) {
+        AlertDialog(
+            onDismissRequest = { confirming = false },
+            title = { Text(stringResource(R.string.settings_try_crash_confirm_title)) },
+            text = {
+                Text(
+                    if (contacts.isEmpty()) {
+                        stringResource(R.string.settings_try_crash_confirm_no_contacts)
+                    } else {
+                        pluralStringResource(R.plurals.settings_try_crash_confirm, contacts.size, contacts.size)
+                    }
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    confirming = false
+                    if (safety.simulateCrash()) onStarted() else needsRide = true
+                }) { Text(stringResource(R.string.settings_try_crash_start), color = colors.danger) }
+            },
+            dismissButton = {
+                TextButton(onClick = { confirming = false }) { Text(stringResource(R.string.cancel)) }
+            },
+        )
     }
 }
 

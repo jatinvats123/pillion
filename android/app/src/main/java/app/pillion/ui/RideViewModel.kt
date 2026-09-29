@@ -1,6 +1,7 @@
 package app.pillion.ui
 
 import android.app.Application
+import android.graphics.BitmapFactory
 import android.os.SystemClock
 import android.util.Log
 import androidx.lifecycle.AndroidViewModel
@@ -64,6 +65,8 @@ data class RideUiState(
     val permissionNeeded: RidePermission? = null,
     /** The ride is on without Pillion's voice (server, Agora or internet down); safety still runs. */
     val voiceProblem: String? = null,
+    /** Connecting takes long: the hosted server is starting up. */
+    val serverWaking: Boolean = false,
 ) {
     val rideActive: Boolean
         get() = status in setOf(
@@ -162,6 +165,8 @@ class RideViewModel(application: Application) : AndroidViewModel(application) {
             else -> state.status
         }
         state.copy(status = status, permissionNeeded = permission, voiceProblem = problem)
+    }.combine(repository.serverWaking) { state, waking ->
+        state.copy(serverWaking = waking && state.status == RideStatus.Connecting)
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), RideUiState())
 
     /**
@@ -216,7 +221,9 @@ class RideViewModel(application: Application) : AndroidViewModel(application) {
                 if (phase.value != Phase.Active) return@collect
                 dropVoice(
                     when (event) {
-                        VoiceEvent.AgentLeft -> "Pillion's voice disconnected."
+                        VoiceEvent.AgentLeft -> voice.timeLimitMinutes?.let {
+                            "Demo rides have $it minutes of voice. Crash detection and SOS are still on; Retry starts a new voice session."
+                        } ?: "Pillion's voice disconnected."
                         is VoiceEvent.ConnectionFailed -> "Voice connection lost."
                     }
                 )
@@ -370,10 +377,6 @@ class RideViewModel(application: Application) : AndroidViewModel(application) {
         permissionNeeded.value = null
     }
 
-    fun setTestCustomerPhone(number: String) {
-        repository.orders.setDemoCustomerPhone(number)
-    }
-
     /**
      * Camera and gallery need the rider looking at the screen, so not while GPS says they're
      * moving; Pillion says so if the voice is on. (Sharing a screenshot isn't gated: one tap.)
@@ -395,6 +398,14 @@ class RideViewModel(application: Application) : AndroidViewModel(application) {
         scanner.scan(source, load)
     }
 
+    /** The built-in sample order screen (invented details) through the real OCR and parser. */
+    fun scanSample() {
+        val assets = getApplication<Application>().assets
+        scanImage(ScanSource.Sample) {
+            LoadedImage(assets.open(SAMPLE_ORDER_SCREEN).use(BitmapFactory::decodeStream), 0)
+        }
+    }
+
     /** OCR found nothing usable: the rider types the order in. */
     fun enterOrderManually() = scanner.enterManually()
 
@@ -405,7 +416,8 @@ class RideViewModel(application: Application) : AndroidViewModel(application) {
      * then its drop is looked up for ETA, and Pillion confirms by voice if connected.
      */
     fun confirmOrder(draft: OrderDraft) {
-        val order = draft.toOrder()
+        val sample = (scanner.state.value as? ScanState.Review)?.source == ScanSource.Sample
+        val order = draft.toOrder().copy(isSample = sample)
         repository.orders.set(order)
         scanner.dismiss()
         _locatingDrop.value = true
@@ -526,6 +538,7 @@ class RideViewModel(application: Application) : AndroidViewModel(application) {
 
     private companion object {
         const val TAG = "RideViewModel"
+        const val SAMPLE_ORDER_SCREEN = "order_samples/order_1_clean.png"
         const val MOVING_KMH = 10f
         const val TALK_HOLD_MS = 600L
         val VOICE_STATUSES = setOf(

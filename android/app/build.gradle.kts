@@ -16,6 +16,20 @@ val backendUrl: String = providers.gradleProperty("PILLION_BACKEND_URL").orNull
     ?: localProperties.getProperty("PILLION_BACKEND_URL")
     ?: "http://10.0.2.2:3000"
 
+// Release builds talk to one hosted backend (render.yaml). Override in android/local.properties.
+val releaseBackendUrl: String = providers.gradleProperty("PILLION_RELEASE_BACKEND_URL").orNull
+    ?: localProperties.getProperty("PILLION_RELEASE_BACKEND_URL")
+    ?: "https://pillion-backend.onrender.com"
+
+// The hosted backend's APP_KEY (public mode). A speed bump, not a secret: it ships in the APK. Kept
+// out of git in android/local.properties (or the PILLION_APP_KEY environment variable).
+val appKey: String = localProperties.getProperty("PILLION_APP_KEY") ?: System.getenv("PILLION_APP_KEY").orEmpty()
+
+// Release signing: the keystore lives outside the repo; path and passwords come from
+// android/local.properties or the environment, never from git. Without them the release is unsigned.
+fun signingValue(name: String): String? = localProperties.getProperty(name) ?: System.getenv(name)
+val releaseKeystore = signingValue("PILLION_KEYSTORE")?.let(::file)?.takeIf { it.exists() }
+
 // Debug builds: the seeded order's customer number for SMS/call tests, kept out of git in
 // android/local.properties. Digits and + only.
 val testCustomerPhone: String = localProperties.getProperty("PILLION_TEST_CUSTOMER_PHONE").orEmpty()
@@ -30,19 +44,35 @@ android {
         minSdk = 26
         targetSdk = 36
         versionCode = 1
-        versionName = "0.1.0"
+        versionName = "1.0.0"
 
-        buildConfigField("String", "BACKEND_URL", "\"${backendUrl.trimEnd('/')}\"")
+        buildConfigField("String", "APP_KEY", "\"$appKey\"")
+    }
+
+    signingConfigs {
+        if (releaseKeystore != null) {
+            create("release") {
+                storeFile = releaseKeystore
+                storePassword = signingValue("PILLION_KEYSTORE_PASSWORD")
+                keyAlias = signingValue("PILLION_KEY_ALIAS") ?: "pillion"
+                keyPassword = signingValue("PILLION_KEY_PASSWORD") ?: signingValue("PILLION_KEYSTORE_PASSWORD")
+            }
+        }
     }
 
     buildTypes {
         debug {
+            buildConfigField("String", "BACKEND_URL", "\"${backendUrl.trimEnd('/')}\"")
             buildConfigField("String", "TEST_CUSTOMER_PHONE", "\"$testCustomerPhone\"")
         }
         release {
+            buildConfigField("String", "BACKEND_URL", "\"${releaseBackendUrl.trimEnd('/')}\"")
             buildConfigField("String", "TEST_CUSTOMER_PHONE", "\"\"")
+            signingConfigs.findByName("release")?.let { signingConfig = it }
             // Phones only: the emulator ABIs (x86, x86_64) stay in debug builds.
             ndk { abiFilters += listOf("arm64-v8a", "armeabi-v7a") }
+            // R8 stays off: the APK is mostly Agora's and ML Kit's native libraries (it would save a few
+            // MB of dex), against keep-rule risk for Agora's JNI, org.json and the GL shaders.
             isMinifyEnabled = false
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
         }

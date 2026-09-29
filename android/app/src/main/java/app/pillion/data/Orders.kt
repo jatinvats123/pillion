@@ -34,6 +34,8 @@ data class Order(
     val drop: DropLocation = DropLocation.Unchecked,
     /** The seeded sample order, not one the rider scanned. */
     val isDemo: Boolean = false,
+    /** Scanned from the built-in sample order screen (invented customer): SMS and calls are off. */
+    val isSample: Boolean = false,
 )
 
 /** Where the active order comes from. */
@@ -54,7 +56,7 @@ class SeededOrderSource(context: Context) : OrderSource {
     override fun activeOrder(): Order =
         SEEDED_ORDER.copy(customerPhone = prefs.getString(KEY_PHONE, null) ?: BuildConfig.TEST_CUSTOMER_PHONE)
 
-    /** Debug builds: point the seeded customer at a test number. */
+    /** Point the seeded customer at a number the rider owns (Settings), for SMS/call tests. */
     fun setCustomerPhone(number: String) {
         prefs.edit { putString(KEY_PHONE, number.trim()) }
     }
@@ -129,7 +131,9 @@ class ActiveOrderSource(context: Context) : OrderSource {
         _setAside.value?.let(::set)
     }
 
-    /** Debug builds: the demo order's customer number for SMS/call tests. */
+    /** The demo order's customer number for SMS/call tests: the rider's own second phone (Settings). */
+    fun demoCustomerPhone(): String = seeded.activeOrder().customerPhone
+
     fun setDemoCustomerPhone(number: String) {
         seeded.setCustomerPhone(number)
         if (_order.value.isDemo) _order.value = seeded.activeOrder()
@@ -145,6 +149,7 @@ class ActiveOrderSource(context: Context) : OrderSource {
         .put("payout", payoutRupees)
         .put("orderId", orderId)
         .put("phoneMasked", phoneMasked)
+        .put("sample", isSample)
         .apply {
             when (drop) {
                 is DropLocation.Found -> put("drop", "found").put("lat", drop.lat).put("lng", drop.lng).put("approximate", drop.approximate)
@@ -161,6 +166,7 @@ class ActiveOrderSource(context: Context) : OrderSource {
         payoutRupees = json.getInt("payout"),
         orderId = json.optString("orderId"),
         phoneMasked = json.optBoolean("phoneMasked"),
+        isSample = json.optBoolean("sample"),
         drop = when (json.optString("drop")) {
             "found" -> DropLocation.Found(json.getDouble("lat"), json.getDouble("lng"), json.optBoolean("approximate"))
             "not_found" -> DropLocation.NotFound
