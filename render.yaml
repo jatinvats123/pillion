@@ -1,4 +1,6 @@
-# Render Blueprint: the Pillion backend as one always-on web service (Starter plan, Singapore).
+# Render Blueprint: the Pillion backend as one web service (Free plan, Singapore).
+# Free sleeps after 15 min without traffic (the first request then takes up to a minute: the app shows
+# "Waking up the server...") and can restart now and then. `plan: starter` (~$7/month) is always on.
 # One instance only: rides, pending SMS/call confirmations and Live Guardian links live in memory.
 # Secrets are marked sync: false: Render asks for them when the Blueprint is created, and they stay
 # in the dashboard (Environment tab), never in git.
@@ -6,7 +8,7 @@ services:
   - type: web
     name: pillion-backend
     runtime: node
-    plan: starter
+    plan: free
     region: singapore
     rootDir: backend
     buildCommand: npm ci

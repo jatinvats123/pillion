@@ -1,15 +1,14 @@
 # Deploying the Pillion backend
 
 The backend keeps live rides, pending SMS/call confirmations and Live Guardian links **in memory, in one
-process**. A host that sleeps, scales out or restarts on its own breaks live rides and SOS links, so it runs
-as **one always-on instance**.
+process**, so it runs as **one instance** (never scaled out). It's on **Render Free**: $0, no card.
 
 ## Host choice
 
 | Option | Cost (check the pricing page) | Verdict |
 |---|---|---|
-| Render free + keep-alive ping | $0 | ✗ Sleeps after 15 min without traffic (a ping every < 15 min keeps it up), but free instances can still be restarted at any time, which ends rides and SOS links. |
-| **Render Starter, Singapore** | **~$7/month, prorated** | ✓ **Chosen.** Always on, health check on `/health`, SIGTERM with a grace period on deploys, secrets in the dashboard. Downgrade after judging. |
+| **Render Free, Singapore** | **$0, no card** | ✓ **Chosen.** Sleeps after 15 min without traffic; the first request then takes up to about a minute (the app shows "Waking up the server…" and waits up to 75 s). A ride keeps it awake (the phone and Agora's tool calls talk to it all the time). It can restart now and then, which ends a live ride or SOS link: rare, and acceptable for a demo. |
+| Render Starter, Singapore | ~$7/month, prorated | Always on, no cold start. Switch the service's **Instance type** to Starter if the free one gives trouble; nothing else changes. |
 | Railway Hobby | ~$5/month incl. $5 usage | ✓ Would also work (always on, Singapore region). |
 | Fly.io | ~$2–3/month, card needed | ✓ Works with `min_machines_running = 1` and auto-stop off; more setup. |
 
@@ -20,8 +19,8 @@ Every deploy restarts the process: **don't deploy while judges may be testing.**
 
 1. Merge `ship-v1` into `main` (or pick `ship-v1` in step 3).
 2. <https://dashboard.render.com> → sign in with GitHub → allow access to the `pillion` repo (private is fine).
-3. **New + → Blueprint** → pick the repo and branch → Render reads [`render.yaml`](../render.yaml): one web
-   service `pillion-backend`, Starter plan, Singapore, root `backend`, `npm ci` / `npm start`, health check
+3. **New + → Blueprint** → pick the repo and branch `main` → Render reads [`render.yaml`](../render.yaml): one
+   web service `pillion-backend`, Free plan, Singapore, root `backend`, `npm ci` / `npm start`, health check
    `/health`.
 4. Render asks for the values marked `sync: false`: paste `AGORA_APP_ID`, `AGORA_APP_CERTIFICATE`,
    `SARVAM_API_KEY`, `GEOAPIFY_API_KEY`, `JEV_API_KEY` from your `backend/.env`, and `APP_KEY` = the
@@ -33,6 +32,11 @@ Every deploy restarts the process: **don't deploy while judges may be testing.**
    `"maps":"geoapify"`.
 7. If the URL isn't `https://pillion-backend.onrender.com`, put it in `android/local.properties` as
    `PILLION_RELEASE_BACKEND_URL=<url>` and rebuild the release APK.
+
+**Keeping it awake (optional):** a free pinger (e.g. cron-job.org) calling `https://<your-url>/health` every
+10 minutes keeps it from sleeping. Render's free hours (750 a month) are shared by all free services in the
+workspace, and one service awake all month uses ~744 of them: if your other Render services are free too,
+ping only during the judging window, or not at all (the app handles the wake-up).
 
 Logs: the service's **Logs** tab. They carry `[start]`, `[tool]`, `[jev]`, `[limit]`, `[guardian]` lines
 with ids and timings only (no transcripts, names, numbers or places).

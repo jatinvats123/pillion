@@ -240,7 +240,8 @@ class BackendApi(
 
     private companion object {
         const val HEALTH_TIMEOUT_MS = 2_000
-        const val LAST_HEALTH_TIMEOUT_MS = 45_000
+        // A free host (Render Free) sleeps when idle and takes up to about a minute to wake.
+        const val LAST_HEALTH_TIMEOUT_MS = 75_000
         const val WAKING_AFTER_MS = 3_000L
     }
 }

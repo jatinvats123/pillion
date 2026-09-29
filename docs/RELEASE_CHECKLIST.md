@@ -32,7 +32,8 @@ $adb = "$env:LOCALAPPDATA\Android\Sdk\platform-tools\adb.exe"
 Set up: rider name; emergency contact = your second phone; **Settings → Demo order: test number** = your
 second phone; earphones in.
 
-- [ ] **Start ride**: greeting within a few seconds ("Waking up the server…" only if the server is slow).
+- [ ] **Start ride**: greeting within a few seconds; after the free server has been idle for 15+ min,
+      "Waking up the server…" first, then the greeting within about a minute.
 - [ ] **Hindi:** "Next drop kitna door hai?" → ETA in Hindi.
 - [ ] **English + numbers:** "How far is my next drop?" and "Nearest petrol pump" → English answers with the
       numbers **said in English** ("seven kilometres", not "saat"). *(Fixed today; not yet heard on a phone.)*

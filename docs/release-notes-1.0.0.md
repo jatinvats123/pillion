@@ -12,8 +12,9 @@ crash check (it can send a real SMS).
 earnings, SMS and calls after a spoken yes), order scan by on-device OCR, crash detection with an offline SOS
 by SMS, Live Guardian (family hears and talks to the rider from the SOS link), English subtitles.
 
-**Demo server limits:** 10 minutes of voice per ride (crash detection and SOS keep running) and a daily cap
-on rides. If you see "Demo limit reached", please try again later.
+**Demo server limits:** it's on a free plan, so after a quiet spell the first ride can take up to a minute
+("Waking up the server…"). 10 minutes of voice per ride (crash detection and SOS keep running) and a daily
+cap on rides. If you see "Demo limit reached", please try again later.
 
 Everything about how it works, the Agora pieces and the honest limits is in the
 [README](https://github.com/jatinvats123/pillion#readme).

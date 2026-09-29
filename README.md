@@ -92,8 +92,9 @@ _Coming soon: the link goes here._ The script is in [docs/DEMO_SCRIPT.md](docs/D
 6. Crash check: add an emergency contact (your own second phone), start a ride, then **Settings → Try the
    crash check**. Say "main theek hoon" or tap **I'M OK**, or let it count down and watch the SMS arrive.
 
-The demo server has limits so my API keys survive the hackathon: 10 minutes of voice per ride (crash
-detection and SOS keep running after that) and a daily cap on rides.
+The demo server is on a free plan and has limits so my API keys survive the hackathon: after a quiet spell
+the first ride can take up to a minute ("Waking up the server…"), there are 10 minutes of voice per ride
+(crash detection and SOS keep running after that) and a daily cap on rides.
 
 ## How I use Agora
 
@@ -304,7 +305,8 @@ couple cost me a day each.
 - **Jev (intent router):** the community key's rate limit is tight (one call, then 429s for a minute), so
   Jev runs beside the LLM and never on the critical path; when it's slow or limited, nothing changes.
 - **Latency:** 2.3–4.6 s end to end, not yet under my 2 s target.
-- **Demo server:** 10 minutes of voice per ride, a daily cap on rides, and in-memory state: a server restart
+- **Demo server:** a free Render instance that sleeps when idle (the first ride after a quiet spell takes up
+  to a minute), 10 minutes of voice per ride, a daily cap on rides, and in-memory state: a server restart
   ends live rides and SOS links.
 - **Emulator:** voice doesn't work on my emulator (silent host mic, broken audio output); I test voice on a
   real phone.
@@ -348,8 +350,8 @@ Agora's cloud calls the tools over public HTTPS, so for local development run a 
 | `DEBUG_ROUTES` | `/debug/*` (typed questions, history); on in local mode, off in public mode. |
 | `PORT`, `HOST`, `TOKEN_EXPIRY_SECONDS` | Server basics. |
 
-**Hosting:** [`render.yaml`](render.yaml) deploys the backend as one always-on instance (it keeps rides in
-memory, so exactly one). Secrets go in the host's dashboard, never in git. See
+**Hosting:** [`render.yaml`](render.yaml) deploys the backend as one Render Free instance (it keeps rides in
+memory, so exactly one; `plan: starter` makes it always on). Secrets go in the host's dashboard, never in git. See
 [docs/DEPLOY.md](docs/DEPLOY.md).
 
 ### Android

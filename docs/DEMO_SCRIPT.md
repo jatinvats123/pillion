@@ -90,6 +90,7 @@ Android may not let a recorder capture at all. So for takes where Pillion talks:
 ## Demo-mode checklist (the day of recording)
 
 - [ ] Backend live on Render: `/health` shows `"guardian":true`, `"mode":"public"`; nobody deploys today.
+      Open `/health` a minute before each take: the free server sleeps after 15 idle minutes.
 - [ ] Fresh install of the release APK (or Settings → Apps → Pillion → Clear storage), so the first-run
       screen and seeded earnings look right.
 - [ ] Rider name "Jatin"; emergency contact = your second phone; **Settings → Demo order: test number** =
