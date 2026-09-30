@@ -45,7 +45,7 @@ browser, hears the rider, holds a button to talk into their earphones and sees t
 agent steps aside.
 
 Agora is the whole voice path: a Conversational AI agent per ride with Sarvam speech-to-text and
-text-to-speech, Agora-managed gpt-4o-mini, tuned turn detection and filler words; seven custom tools
+text-to-speech, Agora-managed gpt-4o-mini, tuned turn detection and filler words; eight custom tools
 answered by the phone through server-sent RTM messages; RTC with AI noise suppression and echo cancellation;
 the Web SDK with RTC-only tokens for family. English subtitles, big touch targets, TalkBack labels,
 reduced motion and automatic night mode make it usable on a moving bike.
@@ -71,8 +71,8 @@ I built it solo, measured the latency, and wrote down twenty-one pieces of SDK f
 Each ride starts one ConvoAI agent from my backend, scoped to the rider's RTC uid, with Sarvam STT
 (language auto-detected per utterance), Agora-managed gpt-4o-mini and Sarvam TTS. Turn detection is VAD
 with 400 ms end-of-speech silence and barge-in after 160 ms of speech (high enough that road noise doesn't
-interrupt). Agora-generated filler words cover tool turns in the rider's language. Seven custom tools
-(ETA, nearby, earnings, prepare SMS, prepare call, confirm, SOS) call my backend with a per-ride secret;
+interrupt). Agora-generated filler words cover tool turns in the rider's language. Eight custom tools
+(ETA, nearby, earnings, weather, prepare SMS, prepare call, confirm, SOS) call my backend with a per-ride secret;
 the backend asks the phone over server-sent RTM messages and returns JSON to the LLM. Transcripts, agent
 state, interrupts, errors and per-turn metrics arrive on the phone over RTM and drive the live transcript and
 the glass globe. The speak API voices safety prompts ("Aap theek ho?") with interrupt priority. For Live

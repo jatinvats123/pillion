@@ -25,3 +25,7 @@ captures/
 .vscode/
 .DS_Store
 Thumbs.db
+
+# /brag trailer projects and renders (large, kept local)
+brag-film/
+brag-output/
