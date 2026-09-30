@@ -1,6 +1,6 @@
 # Pillion — Voice Co-Pilot for Gig Riders
 
-"The AI that rides with you." Built by Jatin (solo) for the **Agora Voice AI Hackathon** by AI Mobile Coders (online, India). Submission deadline: **29 Sep 2026**. Hackathon rule: Agora Conversational AI must be a core component.
+"The AI that rides with you." Built by Jatin (solo) for the **Agora Voice AI Hackathon** by AI Mobile Coders (online, India). Submission deadline: **4 Oct 2026** (extended from 29 Sep). Hackathon rule: Agora Conversational AI must be a core component.
 
 ## Project summary
 
