@@ -83,7 +83,7 @@ is stopped, and a fresh agent resumes when they leave.
 
 - **Repository:** https://github.com/jatinvats123/pillion
 - **APK:** https://github.com/jatinvats123/pillion/releases/latest
-- **Demo video:** _(add the YouTube link)_
+- **Demo video:** https://youtu.be/3c9N2AVr5nM
 - **Shorts cut:** _(add the link)_
 
 ## About me

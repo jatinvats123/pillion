@@ -75,7 +75,9 @@ the order is the built-in sample screen read by the real OCR).
 
 ## Demo video
 
-_Coming soon: the link goes here._ The script is in [docs/DEMO_SCRIPT.md](docs/DEMO_SCRIPT.md).
+[![Pillion demo video: the AI that rides with you](https://img.youtube.com/vi/3c9N2AVr5nM/maxresdefault.jpg)](https://youtu.be/3c9N2AVr5nM)
+
+**[Watch the demo on YouTube](https://youtu.be/3c9N2AVr5nM)** (10:30, chapters in the description): Hindi and English voice, order scan, crash check → SOS → Live Guardian, SMS and calls with a spoken yes, barge-in, and SOS without internet.
 
 ## Try it in two minutes
 
