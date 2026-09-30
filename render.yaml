@@ -38,6 +38,8 @@ services:
         value: geoapify
       - key: GEOAPIFY_API_KEY
         sync: false
+      - key: OPENWEATHER_API_KEY
+        sync: false
       - key: JEV_ENABLED
         value: "true"
       - key: JEV_API_KEY

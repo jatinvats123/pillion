@@ -29,7 +29,8 @@ import kotlin.math.abs
 /**
  * The ride's crash-detection sensors, owned by the ride service: accelerometer and gyroscope at
  * 50 Hz, delivered in batches of up to a second (the sensor hub buffers while the CPU sleeps, so
- * no wake lock is needed), and GPS once a second for speed. Everything runs on one background
+ * no wake lock is needed), GPS once a second for speed, and the network location every 10 s (works
+ * indoors; for the SOS and Live Guardian only, never the detector). Everything runs on one background
  * thread with the [CrashDetector]; results go to [SafetyMonitor] on the main thread.
  */
 class SafetySensors(context: Context, private val safety: SafetyMonitor) {
@@ -69,6 +70,7 @@ class SafetySensors(context: Context, private val safety: SafetyMonitor) {
     fun stop() {
         sensorManager.unregisterListener(sensorListener)
         runCatching { LocationManagerCompat.removeUpdates(locationManager, locationListener) }
+        runCatching { LocationManagerCompat.removeUpdates(locationManager, networkListener) }
         handler?.post { closeRecorder() }
         thread?.quitSafely()
         thread = null
@@ -107,6 +109,18 @@ class SafetySensors(context: Context, private val safety: SafetyMonitor) {
             // SecurityException (permission just revoked) or no GPS hardware.
             Log.w(TAG, "GPS updates unavailable", error)
         }
+        // Wi-Fi / cell position: indoors or under a flyover GPS has no fix, but the SOS and the family
+        // page still need to know roughly where the rider is. Its speed is unreliable, so it's not used.
+        if (!LocationManagerCompat.hasProvider(locationManager, LocationManager.NETWORK_PROVIDER)) return
+        val coarse = LocationRequestCompat.Builder(NETWORK_INTERVAL_MS)
+            .setQuality(LocationRequestCompat.QUALITY_BALANCED_POWER_ACCURACY).build()
+        try {
+            LocationManagerCompat.requestLocationUpdates(
+                locationManager, LocationManager.NETWORK_PROVIDER, coarse, ExecutorCompat.create(workerHandler), networkListener,
+            )
+        } catch (error: Exception) {
+            Log.w(TAG, "Network location unavailable", error)
+        }
     }
 
     private val sensorListener = object : SensorEventListener {
@@ -122,6 +136,10 @@ class SafetySensors(context: Context, private val safety: SafetyMonitor) {
     private val locationListener = LocationListenerCompat { location: Location ->
         if (location.hasSpeed()) feed(Speed(location.elapsedRealtimeNanos / 1_000_000, location.speed * 3.6f))
         main.post { safety.onLocation(location) }
+    }
+
+    private val networkListener = LocationListenerCompat { location: Location ->
+        main.post { safety.onNetworkLocation(location) }
     }
 
     private fun feed(sample: SensorSample) {
@@ -192,6 +210,7 @@ class SafetySensors(context: Context, private val safety: SafetyMonitor) {
         const val SAMPLING_US = 20_000 // 50 Hz
         const val MAX_BATCH_US = 1_000_000 // up to 1 s buffered in the sensor hub
         const val GPS_INTERVAL_MS = 1_000L
+        const val NETWORK_INTERVAL_MS = 10_000L
         const val CLOCK_TOLERANCE_MS = 5_000L
     }
 }

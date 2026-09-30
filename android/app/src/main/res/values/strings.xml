@@ -223,6 +223,8 @@
     <string name="retry_voice">Retry voice</string>
     <string name="gps_unavailable_title">No GPS signal</string>
     <string name="gps_unavailable_body">Crash detection now needs a harder impact, and an SOS would send your last known location.</string>
+    <string name="gps_weak_title">GPS weak (indoors?)</string>
+    <string name="gps_weak_body">Crash detection needs a harder impact until GPS is back. An SOS sends your approximate location.</string>
     <string name="setup_title">Safety setup</string>
     <string name="setup_no_contacts">Add an emergency contact, or SOS can\'t reach anyone.</string>
     <string name="setup_sms">Allow SMS so the SOS can reach your contacts.</string>

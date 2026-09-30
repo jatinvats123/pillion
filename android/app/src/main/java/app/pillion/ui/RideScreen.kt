@@ -176,6 +176,7 @@ fun RideRoute(
     val safetyState by viewModel.safetyState.collectAsStateWithLifecycle()
     val contactCount by viewModel.emergencyContactCount.collectAsStateWithLifecycle()
     val gpsAvailable by viewModel.gpsAvailable.collectAsStateWithLifecycle()
+    val approximateLocation by viewModel.approximateLocation.collectAsStateWithLifecycle()
     val riderName by viewModel.riderName.collectAsStateWithLifecycle()
     val today by viewModel.today.collectAsStateWithLifecycle()
     val muted by viewModel.micMuted.collectAsStateWithLifecycle()
@@ -284,8 +285,8 @@ fun RideRoute(
         }
         if (state.rideActive && !gpsAvailable) add {
             NoticeCard(
-                title = stringResource(R.string.gps_unavailable_title),
-                body = stringResource(R.string.gps_unavailable_body),
+                title = stringResource(if (approximateLocation) R.string.gps_weak_title else R.string.gps_unavailable_title),
+                body = stringResource(if (approximateLocation) R.string.gps_weak_body else R.string.gps_unavailable_body),
                 icon = R.drawable.ic_location_on,
                 safety = true,
             )

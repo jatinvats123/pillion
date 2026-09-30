@@ -127,6 +127,7 @@ class RideViewModel(application: Application) : AndroidViewModel(application) {
     val emergencyContactCount: StateFlow<Int> = safety.contacts.contacts.map { it.size }
         .stateIn(viewModelScope, SharingStarted.Eagerly, safety.contacts.contacts.value.size)
     val gpsAvailable: StateFlow<Boolean> = safety.gpsAvailable
+    val approximateLocation: StateFlow<Boolean> = safety.approximateLocation
     val debug = safety.debug
 
     /** Loudness of the rider's mic and of Pillion's voice, 0..1 (the orb follows them). */

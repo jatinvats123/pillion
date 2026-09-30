@@ -2,6 +2,7 @@ import { config } from './config.js';
 import { classifyTurn, JevSkipped } from './jev.js';
 import { geocodeAddress, MapsError, PLACE_CATEGORIES, placesNear, routeTo } from './maps/index.js';
 import { askPhone, notifyRider, PhoneError, prefetch, takePrefetched } from './rides.js';
+import { weatherAt, WeatherError } from './weather.js';
 
 // Pillion's actions, exposed to the LLM as Agora ConvoAI custom tools (llm.tools). Agora's cloud
 // calls POST {PUBLIC_BASE_URL}/tools/<name>; anything that needs the phone (GPS, earnings, SMS,
@@ -62,6 +63,10 @@ export function toolDefinitions() {
     tool(
       'getEarnings',
       "The rider's trips and earnings today, yesterday, and yesterday up to this time of day, with the difference already worked out.",
+    ),
+    tool(
+      'getWeather',
+      "The weather where the rider is now: temperature, feels-like, conditions, and the chance of rain in the next few hours. Use when the rider asks about the weather, heat, or rain.",
     ),
     tool(
       'prepareSms',
@@ -133,6 +138,15 @@ const handlers = {
     const earnings = await prefetchedOr(ctx, 'earnings', () => askPhone(ctx.ride, 'earnings'));
     const today = earnings.today ?? {};
     return { body: earnings, line: `Today ₹${today.earned_rupees ?? '?'} · ${today.trips ?? '?'} trips` };
+  },
+
+  async getWeather(ctx) {
+    const location = await prefetchedOr(ctx, 'location', () => askPhone(ctx.ride, 'location'));
+    const weather = await weatherAt(location);
+    return {
+      body: { ...weather, ...locationAge(location) },
+      line: `Weather · ${weather.temperature_c}°C, feels ${weather.feels_like_c}°C · rain ${weather.rain_chance_next_hours_percent}%`,
+    };
   },
 
   async prepareSms(ctx, { message }) {
@@ -273,7 +287,18 @@ export async function runTool(ride, name, args) {
   }
   if (line) notifyRider(ride, line, status === 200);
   logTool(ride, turn, name, status === 200 ? 'ok' : body.error, startedAt, ctx);
-  return { status, body };
+  const language = replyLanguage(turn);
+  return { status, body: language ? { ...body, reply_language: language } : body };
+}
+
+// After a tool call the LLM's latest message is the tool result, not the rider, and it drifted to
+// Hindi on English questions ("Nearest petrol pump to me" → a Hindi answer). So every result says
+// which language the rider's latest words (posted by the app) were in.
+const HINGLISH_WORDS = /\b(kya|kitna|kitne|kitni|kahan|kaha|hai|hain|batao|bata|mujhe|mera|meri|aaj|kal|paas|karo|chahiye|nahi|haan|bhai)\b/i;
+
+function replyLanguage(turn) {
+  if (!turn || Date.now() - turn.at > 60_000) return null;
+  return /[ऀ-ॿ]/.test(turn.text) || HINGLISH_WORDS.test(turn.text) ? 'Hindi, in Devanagari script' : 'English only';
 }
 
 // Never 502/504: Cloudflare (the tunnel) swaps those for its own HTML error page, which would then
@@ -287,6 +312,10 @@ function toolFailure(error) {
   if (error instanceof MapsError) {
     console.warn(`[maps] ${error.message}`);
     return { status: 424, body: { error: error.message.split(':')[0] } };
+  }
+  if (error instanceof WeatherError) {
+    console.warn(`[weather] ${error.message}`);
+    return { status: 424, body: { error: 'weather_unavailable' } };
   }
   console.error('[tool] unexpected failure', error);
   return { status: 500, body: { error: 'internal_error' } };
@@ -337,6 +366,7 @@ const TOOL_LABELS = {
   getNextDropEta: 'ETA',
   findNearby: 'Nearby',
   getEarnings: 'Earnings',
+  getWeather: 'Weather',
   prepareSms: 'SMS',
   prepareCall: 'Call',
   confirmPendingAction: 'Confirm',
@@ -346,6 +376,7 @@ const TOOL_INTENT = {
   getNextDropEta: 'eta',
   findNearby: 'nearby',
   getEarnings: 'earnings',
+  getWeather: 'weather',
   prepareSms: 'sms_customer',
   prepareCall: 'call_customer',
   confirmPendingAction: 'chat',

@@ -56,6 +56,10 @@ export const config = {
     geoapifyApiKey: env('GEOAPIFY_API_KEY'),
     googleApiKey: env('GOOGLE_MAPS_API_KEY'),
   },
+  // getWeather: OpenWeather with this key, else (or when it fails) Open-Meteo, which needs none.
+  weather: {
+    openWeatherApiKey: env('OPENWEATHER_API_KEY'),
+  },
   // Live Guardian: SOS SMS links where family hears, talks to and locates the rider. Off = no link,
   // no page, no handoff.
   guardian: {

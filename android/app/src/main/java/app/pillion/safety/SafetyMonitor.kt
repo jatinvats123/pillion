@@ -128,6 +128,10 @@ class SafetyMonitor(
     /** False during a ride with no GPS fix for 30 s (crash detection then needs a harder impact). */
     val gpsAvailable: StateFlow<Boolean> = _gpsAvailable.asStateFlow()
 
+    private val _approximateLocation = MutableStateFlow(false)
+    /** A Wi-Fi / cell fix of the last minute: without GPS, the SOS still sends roughly where the rider is. */
+    val approximateLocation: StateFlow<Boolean> = _approximateLocation.asStateFlow()
+
     /** Set while a ride's Agora voice is connected. */
     var voice: SafetyVoice? = null
         set(value) {
@@ -153,6 +157,7 @@ class SafetyMonitor(
 
     private var language = RiderLanguage.Unknown
     private var latestFix: Location? = null
+    private var latestNetworkFix: Location? = null
     private var fatigue: FatigueTracker? = null
     private var rideStartedAtMs: Long? = null
     private var rideJob: Job? = null
@@ -178,7 +183,9 @@ class SafetyMonitor(
         fatigue = FatigueTracker(config.fatigueAfterMs, config.fatigueRepeatMs, config.fatigueResetAfterStopMs)
         language = RiderLanguage.Unknown
         latestFix = null
+        latestNetworkFix = null
         _gpsAvailable.value = true
+        _approximateLocation.value = false
         alarm.prepare()
         rideJob = scope.launch {
             while (true) {
@@ -211,6 +218,12 @@ class SafetyMonitor(
     fun onLocation(fix: Location) {
         latestFix = fix
         if (fix.hasSpeed()) fatigue?.onSpeed(fix.elapsedRealtimeNanos / 1_000_000, fix.speed * 3.6f)
+    }
+
+    /** Wi-Fi / cell position: only where the rider is, never speed (crash detection and fatigue ignore it). */
+    fun onNetworkLocation(fix: Location) {
+        latestNetworkFix = fix
+        if (rideActive) _approximateLocation.value = true
     }
 
     fun onDetectorEvent(event: DetectorEvent) {
@@ -440,6 +453,7 @@ class SafetyMonitor(
         val start = rideStartedAtMs ?: return
         val fixAge = latestFix?.let { location.ageMs(it) }
         _gpsAvailable.value = fixAge?.let { it < GPS_LOST_MS } ?: (now() - start < GPS_LOST_MS)
+        _approximateLocation.value = latestNetworkFix?.let { location.ageMs(it) < APPROXIMATE_FIX_MS } ?: false
         val minutes = fatigue?.check(now()) ?: return
         if (_state.value != SafetyState.Idle) return
         db.addSafetyEvent(KIND_FATIGUE, "$minutes min of continuous riding")
@@ -467,6 +481,7 @@ class SafetyMonitor(
     /** A fresh fix if one comes within a few seconds, else the newest known one (its age goes in the SMS). */
     private suspend fun currentFix(): SosFix? {
         val live = latestFix?.takeIf { location.ageMs(it) <= LIVE_FIX_MS }
+            ?: latestNetworkFix?.takeIf { location.ageMs(it) <= LIVE_FIX_MS }
         val fix = live
             ?: (if (location.hasPermission()) withTimeoutOrNull(FIX_WAIT_MS) { location.current() } else null)
             ?: location.newestKnown()
@@ -554,6 +569,7 @@ class SafetyMonitor(
         private const val TAG = "Safety"
         private const val TICK_MS = 10_000L
         private const val GPS_LOST_MS = 30_000L
+        private const val APPROXIMATE_FIX_MS = 60_000L
         private const val SIREN_MS = 2_000L
         private const val AGORA_SAY_TIMEOUT_MS = 4_000L
         private const val DEAF_AFTER_SPEAKING_MS = 1_500L
