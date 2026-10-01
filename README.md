@@ -292,27 +292,6 @@ couple cost me a day each.
 | 19 | ConvoAI can't translate its own transcripts; Real-Time STT translation is a separate product with its own recogniser, whose captions could disagree with what the agent heard. I translate with Sarvam instead. | An optional translated field on `user.transcription` / `assistant.transcription`. |
 | 20 | An agent can't be paused or muted, or told to listen to someone else, at runtime: the update API takes only `token` and `llm`. Handing the line to a human (Live Guardian) means stopping the agent and starting a new one, which loses the LLM history. | Pause/resume, and updatable `remote_rtc_uids`. |
 | 21 | `remote_rtc_uids` limits whom the agent hears, but nothing limits who hears the agent: anyone else in the channel can subscribe to its audio. In a mixed human + agent channel I stop the agent while the human is there. | An option to publish the agent's audio only to listed uids, or a line in the docs that channel membership = access. |
-
-## Known limits
-
-- **Crash detection:** validated on synthetic traces only (see [Safety design](#safety-design)).
-- **Order scan:** tested on mock order screens and unit-test text, not on real delivery apps; real layouts
-  will need new labels. The parser never guesses: an unfamiliar layout gives empty fields, not wrong ones.
-  Masked numbers (`98XXX XX123`) stay masked, so SMS/call won't work for those orders ("call from the
-  delivery app"). The camera can't scan the delivery app on the same phone: share a screenshot instead.
-- **Maps:** Geoapify (free, OpenStreetMap data) has **no live traffic**. ETAs use its typical-traffic model
-  and Pillion never claims live traffic. House-level geocoding of Indian addresses is weak on OSM, so most
-  scanned drops land at locality level and the ETA is said as "roughly". Google Maps is implemented behind
-  `MAPS_PROVIDER=google` but untested (billing verification).
-- **Jev (intent router):** the community key's rate limit is tight (one call, then 429s for a minute), so
-  Jev runs beside the LLM and never on the critical path; when it's slow or limited, nothing changes.
-- **Latency:** 2.3–4.6 s end to end, not yet under my 2 s target.
-- **Demo server:** a free Render instance that sleeps when idle (the first ride after a quiet spell takes up
-  to a minute), 10 minutes of voice per ride, a daily cap on rides, and in-memory state: a server restart
-  ends live rides and SOS links.
-- **Emulator:** voice doesn't work on my emulator (silent host mic, broken audio output); I test voice on a
-  real phone.
-
 ## Run it yourself
 
 **You need:** Node.js ≥ 20.12, Android Studio (its bundled JDK), an Agora project with the App Certificate
@@ -384,19 +363,6 @@ The release APK ships arm64-v8a and armeabi-v7a only (~82 MB, mostly Agora's and
 libraries). R8 is off: it would save a few MB of dex, against keep-rule risk for Agora's JNI, the JSON code
 and the GL shaders.
 
-## Demo data, honestly
-
-- **Earnings history:** the first launch seeds 14 days of plausible East Delhi trips and two past safety
-  alerts, marked as seeded in the database; the Earnings screen says "Includes sample history". Rides you end
-  in Pillion are added on top as real trips. (Delivery apps have no API for this.)
-- **Demo order:** "Rahul Verma, Laxmi Nagar", labelled **Demo order (sample)**, with no customer number, so
-  SMS and calls can't reach a stranger until you put in your own test number.
-- **Sample order screens:** mock screenshots of an invented delivery app with invented names and numbers.
-  One ships in the app ("Try a sample order screen"); the order it produces refuses SMS and calls.
-- **"Try the crash check"** feeds a synthetic sensor trace through the real detector.
-- **Everything else is real:** the live Agora agent, Sarvam speech, the LLM's tool calls, real routes and
-  places from Geoapify, real SMS and calls from your SIM, real on-device OCR, real crash detection on real
-  sensors.
 
 ## What's next
 
