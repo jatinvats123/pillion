@@ -329,7 +329,6 @@ couple cost me a day each.
   ends live rides and SOS links.
 - **Emulator:** voice doesn't work on my emulator (silent host mic, broken audio output); I test voice on a
   real phone.
-
 ## Run it yourself
 
 **You need:** Node.js ≥ 20.12, Android Studio (its bundled JDK), an Agora project with the App Certificate
@@ -402,19 +401,6 @@ The release APK ships arm64-v8a and armeabi-v7a only (~82 MB, mostly Agora's and
 libraries). R8 is off: it would save a few MB of dex, against keep-rule risk for Agora's JNI, the JSON code
 and the GL shaders.
 
-## Demo data, honestly
-
-- **Earnings history:** the first launch seeds 14 days of plausible East Delhi trips and two past safety
-  alerts, marked as seeded in the database; the Earnings screen says "Includes sample history". Rides you end
-  in Pillion are added on top as real trips. (Delivery apps have no API for this.)
-- **Demo order:** "Rahul Verma, Laxmi Nagar", labelled **Demo order (sample)**, with no customer number, so
-  SMS and calls can't reach a stranger until you put in your own test number.
-- **Sample order screens:** mock screenshots of an invented delivery app with invented names and numbers.
-  One ships in the app ("Try a sample order screen"); the order it produces refuses SMS and calls.
-- **"Try the crash check"** feeds a synthetic sensor trace through the real detector.
-- **Everything else is real:** the live Agora agent, Sarvam speech, the LLM's tool calls, real routes and
-  places from Geoapify, real SMS and calls from your SIM, real on-device OCR, real crash detection on real
-  sensors.
 
 ## What's next
 
