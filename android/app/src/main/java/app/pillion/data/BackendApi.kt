@@ -33,6 +33,8 @@ data class RideCredentials(
     val guardianBaseUrl: String? = null,
     /** The public demo server stops the voice this many minutes in; 0 = no limit. */
     val maxRideMinutes: Int = 0,
+    /** The server has "Answer calls by voice" on (the rider also turns it on in Settings). */
+    val callAnswer: Boolean = false,
 )
 
 /** [code]: the server's error code (`demo_limit_reached`, `slow_down`…); [message] is fit to show. */
@@ -89,6 +91,7 @@ class BackendApi(
             rideToken = json.getString("rideToken"),
             guardianBaseUrl = json.optString("guardianBaseUrl").takeIf { it.startsWith("https://") },
             maxRideMinutes = json.optInt("maxRideMinutes", 0),
+            callAnswer = json.optBoolean("callAnswer", false),
         )
     }
 
@@ -119,6 +122,14 @@ class BackendApi(
     }
 
     /** Debug builds: the agent handles [text] as if the rider had said it (Agora think). */
+    /**
+     * The phone is ringing (who is calling by kind and name, never the number) or a call Pillion
+     * asked about ended; the backend has the agent ask the rider / say one line.
+     */
+    suspend fun callEvent(rideToken: String, event: JSONObject) {
+        post("/ride/call-event", event, rideToken, connectTimeoutMs = 3_000, readTimeoutMs = 8_000)
+    }
+
     suspend fun debugThink(rideToken: String, text: String) {
         post("/debug/think", JSONObject().put("text", text), rideToken)
     }

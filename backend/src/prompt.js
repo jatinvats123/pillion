@@ -66,6 +66,46 @@ export const RESUMED_CONTEXT =
 
 export const FAILURE_MESSAGE = 'माफ़ कीजिए, एक बार फिर से बोलिए।';
 
+// Answer calls by voice (CALL_ANSWER_ENABLED): the phone's call events reach the LLM through
+// Agora's think API as text starting with PHONE_EVENT. The rider never says these.
+export const PHONE_EVENT = '[Phone event]';
+
+export const CALL_RULES = `Incoming phone calls
+- A message starting with "${PHONE_EVENT}" comes from the rider's phone, not from the rider. Never answer it as if the rider said it.
+- When it says the phone is ringing, ask the rider in one short sentence whether to answer, as the message shows. Never say or guess a phone number.
+- While it rings, if the rider clearly says yes or to pick it up (haan, uthao, utha lo, yes, answer), call answerIncomingCall with action "answer" at once, without saying anything before it. If they say no, later or to cut it (nahi, baad mein, cut karo, no), call it with action "decline". If the reply is unclear, ask once more in a few words.
+- Never call answerIncomingCall unless the latest phone event says the phone is ringing.
+- After it succeeds, say at most three words ("ठीक है।" / "Okay."). call_not_ringing: the call already stopped ringing; say so briefly. rider_did_not_clearly_confirm: ask for a clear yes or no. permission_denied: call answering isn't allowed in the Pillion app's settings.`;
+
+/** Who is calling, for the LLM, and the question it should ask (Hindi and English). */
+function describeCaller({ caller, name, orderActive }) {
+  if (caller === 'customer') {
+    const who = name ? `Customer ${name}` : 'Customer';
+    return { who: `the customer${name ? ` ${name}` : ''}`, hindi: `${who} का call आ रहा है। उठाऊँ?`, english: `Your customer${name ? ` ${name}` : ''} is calling. Should I answer?` };
+  }
+  if (caller === 'emergency_contact' && name) {
+    return { who: `${name}, one of the rider's emergency contacts`, hindi: `${name} का call आ रहा है। उठाऊँ?`, english: `${name} is calling. Should I answer?` };
+  }
+  if (orderActive) {
+    return {
+      who: 'an unknown number; an order is on and delivery apps hide customer numbers, so it may be the customer',
+      hindi: 'Unknown number से call है, शायद customer का। उठाऊँ?',
+      english: 'A call from an unknown number, maybe your customer. Should I answer?',
+    };
+  }
+  return { who: 'an unknown number', hindi: 'Unknown number से call है। उठाऊँ?', english: 'A call from an unknown number. Should I answer?' };
+}
+
+/** The think text for a ringing call. [english]: the rider's latest words were English. */
+export function callRingingThink(call, english) {
+  const { who, hindi, english: inEnglish } = describeCaller(call);
+  return `${PHONE_EVENT} The rider's phone is ringing: an incoming call from ${who}. Ask the rider in one short sentence whether to answer it, ${english ? `in English only, like: "${inEnglish}"` : `in Hindi in Devanagari script, like: "${hindi}"`}`;
+}
+
+/** The think text after a call the rider took has ended: one short line, no chatter. */
+export const callEndedThink = (english) =>
+  `${PHONE_EVENT} The phone call has ended. Say only one very short line, ${english ? 'in English only, like: "Call over. Anything else?"' : 'in Hindi in Devanagari script, like: "Call खत्म। कुछ और?"'}`;
+
 // Filler words bridge the wait while a tool runs (Agora generates one per turn, in context).
 export const FILLER_PROMPT =
   "Write one very short filler of 2 to 5 words telling the rider you are checking. Use the language of the rider's last message: Hindi or Hinglish in Devanagari script, English in English. Never answer the question.";

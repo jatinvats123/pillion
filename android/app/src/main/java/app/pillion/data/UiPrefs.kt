@@ -31,7 +31,16 @@ class UiPrefs(context: Context) {
         _subtitles.value = on
     }
 
-    private val _firstRunDone = MutableStateFlow(prefs.getBoolean(KEY_FIRST_RUN_DONE, false))
+    private val _answerCalls = MutableStateFlow(prefs.getBoolean(KEY_ANSWER_CALLS, false))
+    /** "Answer calls by voice": during a ride Pillion says who is calling and asks whether to answer. */
+    val answerCalls: StateFlow<Boolean> = _answerCalls.asStateFlow()
+
+    fun setAnswerCalls(on: Boolean) {
+        prefs.edit { putBoolean(KEY_ANSWER_CALLS, on) }
+        _answerCalls.value = on
+    }
+
+    private val _firstRunDone =MutableStateFlow(prefs.getBoolean(KEY_FIRST_RUN_DONE, false))
     /** The one-screen welcome (name, emergency contact) was finished or skipped. */
     val firstRunDone: StateFlow<Boolean> = _firstRunDone.asStateFlow()
 
@@ -44,5 +53,6 @@ class UiPrefs(context: Context) {
         const val KEY_THEME = "theme"
         const val KEY_SUBTITLES = "subtitles"
         const val KEY_FIRST_RUN_DONE = "first_run_done"
+        const val KEY_ANSWER_CALLS = "answer_calls"
     }
 }

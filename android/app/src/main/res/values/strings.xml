@@ -147,6 +147,10 @@
     <string name="settings_subtitles">English subtitles</string>
     <string name="settings_subtitles_switch">Show English under Hindi lines</string>
     <string name="settings_subtitles_note">Translated by Sarvam through the Pillion server. Off saves those calls; the voice is unchanged.</string>
+    <string name="settings_calls">Calls while riding</string>
+    <string name="settings_calls_switch">Answer calls by voice</string>
+    <string name="settings_calls_note">Pillion says who is calling (your customer, an emergency contact or an unknown number) and answers or declines when you say so. Needs call permissions; the number stays on this phone.</string>
+    <string name="settings_calls_denied">Call permissions are off, so this stays off. Allow them in Android settings → Apps → Pillion → Permissions.</string>
     <string name="settings_battery">Battery</string>
     <string name="settings_battery_ok">Battery optimisation is off for Pillion: crash detection keeps running with the screen off.</string>
     <string name="settings_try_crash">Try the crash check</string>

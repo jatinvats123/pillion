@@ -65,6 +65,11 @@ export const config = {
   guardian: {
     enabled: env('GUARDIAN_ENABLED', 'false').toLowerCase() === 'true',
   },
+  // Answer calls by voice: the phone reports a ringing call, Pillion asks the rider whether to
+  // answer it. Off = no /ride/call-event, no call rules in the prompt.
+  callAnswer: {
+    enabled: env('CALL_ANSWER_ENABLED', 'false').toLowerCase() === 'true',
+  },
   // Public deployment (see limits.js). APP_KEY set = public mode: starting rides and geocoding need
   // the release app's key, from anywhere. Empty = local mode: the laptop / Wi-Fi / tunnel rules.
   appKey: env('APP_KEY'),

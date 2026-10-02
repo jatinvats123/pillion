@@ -11,6 +11,7 @@ import app.pillion.data.Order
 import app.pillion.data.OrderSource
 import app.pillion.safety.ManualSosResult
 import app.pillion.safety.SafetyMonitor
+import app.pillion.safety.SafetyState
 import app.pillion.safety.SosTrigger
 import kotlin.math.roundToInt
 import kotlinx.coroutines.CancellationException
@@ -41,6 +42,10 @@ class DeviceActions(
     private val earnings: EarningsDb,
     private val safety: SafetyMonitor,
     private val onSmsDelivery: (customerName: String, delivered: Boolean) -> Unit,
+    /** Answer calls by voice: when the phone started ringing (wall clock), 0 if it isn't ringing. */
+    private val ringingSinceMs: () -> Long = { 0L },
+    /** The rider's latest final transcript and when it came (wall clock), if any. */
+    private val lastRiderTurn: () -> Pair<String, Long>? = { null },
 ) {
     private val appContext = context.applicationContext
     private val location = RiderLocation(appContext)
@@ -56,6 +61,7 @@ class DeviceActions(
                 "sms" -> sendSms(request.optJSONObject("args")?.optString("message").orEmpty())
                 "call" -> placeCall()
                 "sos" -> startSos()
+                "call_answer" -> answerCall(request.optJSONObject("args")?.optString("action").orEmpty())
                 else -> throw DeviceActionException("unknown_action")
             }
             JSONObject().put("ok", true).put("data", data)
@@ -138,6 +144,38 @@ class DeviceActions(
         return JSONObject().put("status", "calling").put("customer_name", order.customerName)
     }
 
+    /**
+     * Answer calls by voice: the LLM heard the rider say to answer or decline the ringing call.
+     * Answering also needs the rider's own latest words, since the phone started ringing and at
+     * most [ANSWER_REPLY_MAX_AGE_MS] old, to be a clear yes here on the phone. Declining needs no
+     * check (the call keeps ringing otherwise, and the caller can call again).
+     */
+    private fun answerCall(action: String): JSONObject {
+        val answer = when (action) {
+            "answer" -> true
+            "decline" -> false
+            else -> throw DeviceActionException("action_missing")
+        }
+        val ringingSince = ringingSinceMs()
+        if (ringingSince == 0L) throw DeviceActionException("call_not_ringing")
+        if (safety.state.value != SafetyState.Idle) throw DeviceActionException("safety_alert_active")
+        if (!granted(Manifest.permission.ANSWER_PHONE_CALLS)) throw DeviceActionException("permission_denied")
+        if (answer) {
+            val (text, at) = lastRiderTurn() ?: (null to 0L)
+            val fresh = text != null && at >= ringingSince && System.currentTimeMillis() - at <= ANSWER_REPLY_MAX_AGE_MS
+            val reply = if (fresh) CallReplies.classify(text.orEmpty()) else CallReply.Unclear
+            Log.i(TAG, "Call answer: rider's words ${if (fresh) reply.name.lowercase() else "missing or old"}")
+            if (reply != CallReply.Answer) throw DeviceActionException("rider_did_not_clearly_confirm")
+        }
+        val done = try {
+            controlRingingCall(appContext, answer)
+        } catch (_: SecurityException) {
+            throw DeviceActionException("permission_denied")
+        }
+        if (!done) throw DeviceActionException("call_control_failed")
+        return JSONObject().put("status", if (answer) "answered" else "declined")
+    }
+
     private fun customerNumber(order: Order): String =
         if (order.isSample) throw DeviceActionException("sample_order") else order.customerPhone.filter { it.isDigit() || it == '+' }.takeIf { it.length >= 7 }
             ?: throw DeviceActionException(if (order.phoneMasked) "customer_number_masked" else "no_customer_number")
@@ -148,5 +186,6 @@ class DeviceActions(
     private companion object {
         const val TAG = "DeviceActions"
         const val SMS_TIMEOUT_MS = 12_000L
+        const val ANSWER_REPLY_MAX_AGE_MS = 10_000L
     }
 }

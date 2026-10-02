@@ -27,7 +27,8 @@ import {
   translateAllowed,
 } from './limits.js';
 import { answerFromPhone, liveRideCount, newestRide, rideForToken } from './rides.js';
-import { onRiderTurn, runTool } from './tools.js';
+import { callEndedThink, callRingingThink } from './prompt.js';
+import { onRiderTurn, replyLanguage, runTool } from './tools.js';
 import { toEnglish } from './translate.js';
 
 try {
@@ -146,6 +147,61 @@ app.post(
     } catch (error) {
       console.warn(`[say] failed: ${describe(error)}`);
       res.status(424).json({ error: 'say_failed' });
+    }
+  }),
+);
+
+// --- Answer calls by voice (CALL_ANSWER_ENABLED). The phone says who is calling by kind and name
+// (customer, emergency contact or unknown), never the number; logs carry neither the name nor what
+// was said: state, caller kind and timing only.
+
+function callAnswerOnly(_req, res, next) {
+  return config.callAnswer.enabled ? next() : res.status(404).json({ error: 'call_answer_off' });
+}
+
+const CALLER_KINDS = ['customer', 'emergency_contact', 'unknown'];
+// Letters and spaces only, so a contact's name can't carry a number or instructions into the LLM.
+const callerName = (raw) => String(raw ?? '').replace(/[^\p{L}\p{M} .'-]/gu, '').replace(/\s+/g, ' ').trim().slice(0, 40);
+
+// The phone is ringing (Pillion asks the rider through Agora's think API: the LLM words the
+// question in the rider's language and keeps the call in its history), or a call it asked about ended.
+app.post(
+  '/ride/call-event',
+  callAnswerOnly,
+  withRide(async (ride, req, res) => {
+    const state = req.body?.state;
+    const tag = `[call] ride=${ride.channel.slice(-6)}`;
+    if (state !== 'ringing' && state !== 'ended') return res.status(400).json({ error: 'state must be ringing or ended' });
+    if (state === 'ended') {
+      const call = ride.incomingCall;
+      ride.incomingCall = null;
+      const answered = req.body?.answered === true;
+      console.log(`${tag} ended${call ? ` ${Math.round((Date.now() - call.at) / 1000)} s after ringing` : ''} (${answered ? 'answered' : 'not answered'})`);
+      // Back from a call the rider took: one short line. Declined or missed: nothing to say.
+      if (answered && ride.session) {
+        await ride.session.think(callEndedThink(replyLanguage(ride.turn) === 'English only')).catch((error) => console.warn(`${tag} ended think failed: ${describe(error)}`));
+      }
+      return res.json({ ok: true });
+    }
+
+    if (!ride.session) return res.status(409).json({ error: 'voice_not_running' });
+    const caller = CALLER_KINDS.includes(req.body?.caller) ? req.body.caller : 'unknown';
+    const call = { caller, name: callerName(req.body?.name), orderActive: req.body?.order_active === true };
+    ride.incomingCall = { caller, at: Date.now() };
+    const startedAt = Date.now();
+    try {
+      // Ask now, whatever Pillion is doing; the ringtone mustn't cut the question off.
+      await ride.session.think(callRingingThink(call, replyLanguage(ride.turn) === 'English only'), {
+        on_listening_action: 'interrupt',
+        on_thinking_action: 'interrupt',
+        on_speaking_action: 'interrupt',
+        interruptable: false,
+      });
+      console.log(`${tag} ringing caller=${caller}${call.name ? ' (named)' : ''}${call.orderActive ? ' order=on' : ''} · think in ${Date.now() - startedAt} ms`);
+      res.json({ ok: true });
+    } catch (error) {
+      console.warn(`${tag} ringing think failed: ${describe(error)}`);
+      res.status(424).json({ error: 'think_failed' });
     }
   }),
 );

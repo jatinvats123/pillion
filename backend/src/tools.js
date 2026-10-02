@@ -43,7 +43,20 @@ export function toolDefinitions() {
     };
   };
 
+  // Answer calls by voice (CALL_ANSWER_ENABLED): only offered to the LLM when the feature is on.
+  const callTools = config.callAnswer.enabled
+    ? [
+        tool(
+          'answerIncomingCall',
+          "Answers or declines the phone call that is ringing right now. Only after a \"[Phone event]\" message said the phone is ringing. action \"answer\" only if the rider clearly said yes or to pick it up; \"decline\" if they said no, later or to cut it.",
+          { action: { type: 'string', enum: ['answer', 'decline'] } },
+          8000,
+        ),
+      ]
+    : [];
+
   return [
+    ...callTools,
     tool(
       'getNextDropEta',
       'Road distance and travel time by motorbike from the rider to the next drop address. Use when the rider asks how far the next drop or customer is, or when they will reach.',
@@ -102,6 +115,19 @@ export function toolDefinitions() {
 }
 
 const handlers = {
+  // The phone checks the call is still ringing and, for "answer", that the rider's own last words
+  // were a clear yes; then Telecom answers or rejects it. Pillion steps aside once a call is on.
+  async answerIncomingCall(ctx, { action }) {
+    const { ride } = ctx;
+    if (!config.callAnswer.enabled) throw new ToolError(404, 'unknown_tool');
+    if (action !== 'answer' && action !== 'decline') throw new ToolError(400, 'action_missing');
+    ctx.label = 'Call';
+    if (!ride.incomingCall) throw new ToolError(409, 'no_incoming_call');
+    await askPhone(ride, 'call_answer', { action }, 6000);
+    ride.incomingCall = null;
+    return { body: { status: action === 'answer' ? 'answered' : 'declined' }, line: action === 'answer' ? '✓ Call answered' : '✓ Call declined' };
+  },
+
   // The phone runs the SOS itself (countdown, SMS over the SIM, speaking the result); this only
   // starts it. No action line: the phone shows its own.
   async sendSos(ctx) {
@@ -296,7 +322,7 @@ export async function runTool(ride, name, args) {
 // which language the rider's latest words (posted by the app) were in.
 const HINGLISH_WORDS = /\b(kya|kitna|kitne|kitni|kahan|kaha|hai|hain|batao|bata|mujhe|mera|meri|aaj|kal|paas|karo|chahiye|nahi|haan|bhai)\b/i;
 
-function replyLanguage(turn) {
+export function replyLanguage(turn) {
   if (!turn || Date.now() - turn.at > 60_000) return null;
   return /[ऀ-ॿ]/.test(turn.text) || HINGLISH_WORDS.test(turn.text) ? 'Hindi, in Devanagari script' : 'English only';
 }
@@ -371,8 +397,10 @@ const TOOL_LABELS = {
   prepareCall: 'Call',
   confirmPendingAction: 'Confirm',
   sendSos: 'SOS',
+  answerIncomingCall: 'Call',
 };
 const TOOL_INTENT = {
+  answerIncomingCall: 'chat',
   getNextDropEta: 'eta',
   findNearby: 'nearby',
   getEarnings: 'earnings',

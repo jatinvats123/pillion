@@ -2,6 +2,7 @@ package app.pillion.ride
 
 import android.content.Context
 import android.util.Log
+import app.pillion.BuildConfig
 import app.pillion.data.BackendApi
 import app.pillion.data.installId
 import app.pillion.data.DropLocation
@@ -10,10 +11,17 @@ import app.pillion.data.RideCredentials
 import app.pillion.device.DeviceActions
 import app.pillion.device.RiderLocation
 import app.pillion.device.RidePermission
-import app.pillion.device.phoneCallActive
+import app.pillion.device.CallState
+import app.pillion.device.Caller
+import app.pillion.device.callQuestion
+import app.pillion.device.callState
+import app.pillion.device.identifyCaller
+import app.pillion.device.pausesPillion
 import app.pillion.pillion
 import app.pillion.safety.RiderLanguage
+import app.pillion.safety.SafetyLine
 import app.pillion.safety.SafetyPhrases
+import app.pillion.safety.SafetyState
 import app.pillion.safety.SafetyVoice
 import app.pillion.voice.AgentState
 import app.pillion.voice.ConnectionState
@@ -51,12 +59,20 @@ class RideRepository(
     val serverWaking = api.waking
     private val location = RiderLocation(appContext)
     private val earnings = appContext.pillion.db
-    private val actions = DeviceActions(appContext, orders, earnings, safety) { customer, delivered ->
-        voice.showActionLine(
-            if (delivered) "✓ Delivered to $customer" else "✗ SMS to $customer not delivered",
-            failed = !delivered,
-        )
-    }
+    private val actions = DeviceActions(
+        appContext,
+        orders,
+        earnings,
+        safety,
+        onSmsDelivery = { customer, delivered ->
+            voice.showActionLine(
+                if (delivered) "✓ Delivered to $customer" else "✗ SMS to $customer not delivered",
+                failed = !delivered,
+            )
+        },
+        ringingSinceMs = { ringingSinceMs },
+        lastRiderTurn = { callReply },
+    )
 
     private val _permissionNeeded = MutableSharedFlow<RidePermission>(
         extraBufferCapacity = 4,
@@ -72,9 +88,22 @@ class RideRepository(
     /** The rider's latest final transcript: what Pillion says outside the LLM follows its language. */
     @Volatile
     private var lastRiderText: String? = null
+    /** The rider's latest words while the phone rings (not while it asked), and when (wall clock). */
+    @Volatile
+    private var callReply: Pair<String, Long>? = null
+    /** The phone is asking about a call through its speaker until then; Long.MAX_VALUE while it speaks. */
+    @Volatile
+    private var callDeafUntilMs = 0L
+
+    /** When the phone started ringing (wall clock), 0 when it isn't. */
+    @Volatile
+    private var ringingSinceMs = 0L
+    private val uiPrefs = appContext.pillion.uiPrefs
+    private val contacts = appContext.pillion.contacts
 
     suspend fun start(): RideCredentials {
         val ride = api.startAgent()
+        voice.keepAudioWhileRinging = ride.callAnswer && uiPrefs.answerCalls.value
         try {
             voice.join(ride)
         } catch (error: Throwable) {
@@ -122,6 +151,13 @@ class RideRepository(
             voice.riderTurns.collect { turn ->
                 safety.onRiderTurn(turn.text)
                 lastRiderText = turn.text
+                // While the phone rings: the rider's answer, unless the phone was asking just then.
+                if (ringingSinceMs > 0L) {
+                    val now = System.currentTimeMillis()
+                    val deaf = now < callDeafUntilMs
+                    if (!deaf) callReply = turn.text to now
+                    Log.i(CALL_TAG, "Transcript while ringing, ${now - ringingSinceMs} ms in${if (deaf) " (phone was speaking: ignored)" else ""}" + if (BuildConfig.DEBUG) ": ${turn.text}" else "")
+                }
                 launch {
                     runCatching { api.postTurn(ride.rideToken, turn.turnId, turn.text) }
                         .onFailure { Log.w(TAG, "Turn not posted", it) }
@@ -131,9 +167,7 @@ class RideRepository(
         launch {
             voice.serverRequests.collect { request -> launch { answer(ride, request) } }
         }
-        launch {
-            phoneCallActive(appContext).collect { voice.setPhoneCallActive(it) }
-        }
+        launch { followPhoneCalls(ride) }
         if (ride.guardianBaseUrl != null) launch { handOverToFamily(ride) }
         awaitCancellation()
     }
@@ -161,6 +195,105 @@ class RideRepository(
                 }
             }
         }
+    }
+
+    /**
+     * Phone calls during a ride. Any call, ringing or on, hands the mic and speaker to the call, as
+     * before. With "Answer calls by voice" live for a ring ([canAskAboutCall]), Pillion stays on
+     * while the phone rings and the backend has the agent ask the rider whether to answer (Agora
+     * think); Pillion steps aside once the call is on, and the backend hears when it has ended.
+     */
+    private suspend fun followPhoneCalls(ride: RideCredentials) = coroutineScope {
+        var ringing = false
+        var askWhileRinging = false
+        var number: String? = null
+        var ask: Job? = null
+        var asked = false
+        var answered = false
+        var paused: Boolean? = null
+        callState(appContext, withNumber = uiPrefs.answerCalls.value).collect { state ->
+            when (state) {
+                is CallState.Ringing -> {
+                    // Android may report a ring twice, the second time with the number.
+                    number = state.number ?: number
+                    if (!ringing) {
+                        ringing = true
+                        ringingSinceMs = System.currentTimeMillis()
+                        askWhileRinging = canAskAboutCall(ride)
+                        Log.i(CALL_TAG, "Ringing: ${if (askWhileRinging) "Pillion asks the rider" else "Pillion steps aside"}")
+                        if (askWhileRinging) {
+                            ask = launch {
+                                delay(RING_SETTLE_MS)
+                                asked = true
+                                val order = orders.activeOrder()
+                                val caller = identifyCaller(number, order, contacts.contacts.value)
+                                Log.i(CALL_TAG, "Caller ${caller.kind.wireName} (number ${if (number != null) "given" else "not given"})")
+                                launch { reportCall(ride, ringingEvent(caller, orderActive = order != null)) }
+                                speakCallQuestion(callQuestion(caller, orderActive = order != null))
+                            }
+                        }
+                    }
+                }
+                CallState.Offhook -> {
+                    ask?.cancel()
+                    answered = asked
+                }
+                CallState.Idle -> {
+                    ask?.cancel()
+                    if (asked) {
+                        val event = JSONObject().put("state", "ended").put("answered", answered)
+                        launch { reportCall(ride, event) }
+                    }
+                    ringing = false
+                    ringingSinceMs = 0L
+                    callReply = null
+                    callDeafUntilMs = 0L
+                    askWhileRinging = false
+                    number = null
+                    ask = null
+                    asked = false
+                    answered = false
+                }
+            }
+            val pause = pausesPillion(state, askWhileRinging)
+            if (pause != paused) {
+                paused = pause
+                voice.setPhoneCallActive(pause)
+            }
+        }
+    }
+
+    // A crash alert or SOS wins over a call; family on the line, a muted mic or no voice: as before.
+    private fun canAskAboutCall(ride: RideCredentials) =
+        ride.callAnswer && uiPrefs.answerCalls.value &&
+            voice.connection.value == ConnectionState.Connected && voice.agentPresent.value &&
+            !voice.familyPresent.value && !voice.micMuted.value && safety.state.value == SafetyState.Idle
+
+    /** Who is calling, decided on the phone: by kind and name, never the number. */
+    private fun ringingEvent(caller: Caller, orderActive: Boolean) = JSONObject()
+        .put("state", "ringing")
+        .put("caller", caller.kind.wireName)
+        .put("order_active", orderActive)
+        .apply { caller.name?.let { put("name", it) } }
+
+    /**
+     * Android mutes other apps' media sound while the phone rings, Pillion's Agora voice included,
+     * so the phone asks itself, on the alarm channel (on-device TTS, as the crash check). Pillion's
+     * mic hears that too: words heard meanwhile and just after don't count as the rider's answer.
+     */
+    private suspend fun speakCallQuestion(line: SafetyLine) {
+        val language = lastRiderText?.let(SafetyPhrases::languageOf)?.takeIf { it != RiderLanguage.Unknown } ?: RiderLanguage.Hindi
+        callDeafUntilMs = Long.MAX_VALUE
+        try {
+            if (!safety.alarm.speak(line, language)) Log.w(CALL_TAG, "On-device TTS unavailable: question not spoken")
+        } finally {
+            callDeafUntilMs = System.currentTimeMillis() + CALL_DEAF_AFTER_MS
+        }
+    }
+
+    private suspend fun reportCall(ride: RideCredentials, event: JSONObject) {
+        runCatching { api.callEvent(ride.rideToken, event) }
+            .onFailure { Log.w(CALL_TAG, "Call event ${event.optString("state")} not delivered", it) }
     }
 
     private suspend fun answer(ride: RideCredentials, request: JSONObject) {
@@ -243,6 +376,11 @@ class RideRepository(
 
     private companion object {
         const val TAG = "RideRepository"
+        const val CALL_TAG = "IncomingCall"
+        // After the first ring callback: Android may send the caller's number in a second one.
+        const val RING_SETTLE_MS = 400L
+        // After the phone's own question: the mic may still be finishing it (ASR, room echo).
+        const val CALL_DEAF_AFTER_MS = 1_500L
         const val SAY_START_TIMEOUT_MS = 3_000L
         const val AGENT_BACK_TIMEOUT_MS = 20_000L
         const val NEAR_MAX_AGE_MS = 30 * 60_000L

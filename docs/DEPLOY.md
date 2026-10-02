@@ -60,6 +60,7 @@ Secrets only in the Render dashboard, never in git. Unlisted optional variables 
 | `JEV_API_KEY` | *secret* | |
 | `PUBLIC_BASE_URL` | `https://<service>.onrender.com` | Tool calls from Agora and the SOS links use it. |
 | `GUARDIAN_ENABLED` | `true` | |
+| `CALL_ANSWER_ENABLED` | `true` | Answer calls by voice (riders also turn it on in Settings). |
 | `APP_KEY` | *secret* (= `PILLION_APP_KEY`) | Public mode: `/agent/start`, `/agent/stop`, `/order/geocode` need it. |
 | `RIDES_ENABLED` | `true` | **Kill switch:** `false` refuses new rides. |
 | `MAX_RIDE_MINUTES` | `10` | Voice per ride (waits while an SOS link is live). |
