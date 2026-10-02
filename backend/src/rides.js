@@ -32,6 +32,7 @@ export function createRide({ channel, uid }) {
     turn: null, // latest final rider transcript (+ Jev's reading of it)
     pendingAction: null, // SMS or call waiting for the rider's "yes"
     familyPresent: false, // Live Guardian: family is in the channel
+    incomingCall: null, // Answer calls by voice: the ringing call the phone reported ({ caller, at })
     timeUp: false, // MAX_RIDE_MINUTES reached: the voice has ended for this ride
     limitTimer: null,
     handoff: Promise.resolve(), // agent stop/restart steps, one after another

@@ -139,6 +139,10 @@ class VoiceSession(context: Context) {
     /** Agora's local voice activity detection: the rider is talking (never while muted). */
     val riderSpeaking: StateFlow<Boolean> = _riderSpeaking.asStateFlow()
 
+    /** Answer calls by voice: keep Pillion's audio while the phone rings. Set before [join]. */
+    @Volatile
+    var keepAudioWhileRinging = false
+
     private val _micMuted = MutableStateFlow(false)
     /** The rider muted Pillion: the mic stays captured locally but nothing is sent to the agent. */
     val micMuted: StateFlow<Boolean> = _micMuted.asStateFlow()
@@ -194,6 +198,14 @@ class VoiceSession(context: Context) {
         engine.enableAudio()
         engine.setDefaultAudioRoutetoSpeakerphone(true)
         applyAiAudioParameters(engine, Constants.AUDIO_ROUTE_DEFAULT)
+        if (keepAudioWhileRinging) {
+            // Answer calls by voice (the rider allowed it): the SDK's own phone listener stops capture
+            // and playout as soon as the phone rings ("system phone call ring"), so Pillion could
+            // neither ask nor hear the answer. This undocumented engine parameter (found in the 4.6.4
+            // native library) skips that; [setPhoneCallActive] still hands the audio to an answered call.
+            val result = engine.setParameters("""{"che.audio.bypass_pstn_call_event":true}""")
+            Log.i(TAG, "Agora pause on a ringing phone switched off (setParameters $result)")
+        }
         // Mic and agent loudness for the orb; debug builds also time replies end to end from the
         // rider's voice activity (100 ms resolution).
         engine.enableAudioVolumeIndication(VOLUME_INTERVAL_MS, 3, true)
@@ -418,6 +430,9 @@ class VoiceSession(context: Context) {
         trackLatency(json, turnId)
         when (json.optString("object")) {
             "user.transcription" -> {
+                // Text the backend injected with Agora's think API (a call event) comes back as a
+                // user transcript: it isn't the rider's, so it's neither shown nor treated as a turn.
+                if (json.optString("text").trimStart().startsWith(PHONE_EVENT_PREFIX)) return
                 val isFinal = json.optBoolean("final", true)
                 upsertLine(speaker = Speaker.Rider, turnId = turnId, text = json.optString("text"), isFinal = isFinal)
                 if (isFinal) reportRiderTurn(turnId, json.optString("text").trim())
@@ -572,6 +587,8 @@ class VoiceSession(context: Context) {
 
     private companion object {
         const val TAG = "VoiceSession"
+        // Same as PHONE_EVENT in backend/src/prompt.js.
+        const val PHONE_EVENT_PREFIX = "[Phone event]"
         /** RTM user id the backend sends from (see backend/src/rtm.js). */
         const val SERVER_RTM_ID = "pillion-server"
         const val JOIN_TIMEOUT_MS = 15_000L

@@ -27,6 +27,10 @@
     <uses-permission android:name="android.permission.SEND_SMS" />
     <uses-permission android:name="android.permission.CALL_PHONE" />
     <uses-permission android:name="android.permission.READ_PHONE_STATE" />
+    <!-- Answer calls by voice (off until the rider turns it on in Settings): the caller's number,
+         matched on the phone against the order's customer and emergency contacts; answer / decline. -->
+    <uses-permission android:name="android.permission.READ_CALL_LOG" />
+    <uses-permission android:name="android.permission.ANSWER_PHONE_CALLS" />
     <!-- Crash alert: shown over the lock screen (Android 14+ lets the rider turn this off; the
          app then shows a setup card), vibration, and a CPU kept awake only while an alert or SOS
          is running (time-limited). -->

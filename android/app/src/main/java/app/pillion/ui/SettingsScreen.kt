@@ -1,7 +1,11 @@
 package app.pillion.ui
 
+import android.Manifest
+import android.content.pm.PackageManager
 import android.os.PowerManager
 import androidx.activity.compose.BackHandler
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.FlowRow
@@ -121,6 +125,9 @@ fun SettingsRoute(onBack: () -> Unit) {
                 }
             }
 
+            SectionTitle(stringResource(R.string.settings_calls), Modifier.padding(top = Space.m))
+            AnswerCallsSwitch()
+
             SectionTitle(stringResource(R.string.settings_battery), Modifier.padding(top = Space.m))
             PillionCard {
                 Text(
@@ -173,6 +180,52 @@ fun SettingsRoute(onBack: () -> Unit) {
                     )
                 }
             }
+        }
+    }
+}
+
+/** The permissions "Answer calls by voice" needs: call state, the caller's number, answer / decline. */
+private val CALL_PERMISSIONS = arrayOf(
+    Manifest.permission.READ_PHONE_STATE,
+    Manifest.permission.READ_CALL_LOG,
+    Manifest.permission.ANSWER_PHONE_CALLS,
+)
+
+/** Off by default; turning it on asks for [CALL_PERMISSIONS] and stays off unless all are granted. */
+@Composable
+private fun AnswerCallsSwitch() {
+    val context = LocalContext.current
+    val prefs = context.pillion.uiPrefs
+    val on by prefs.answerCalls.collectAsStateWithLifecycle()
+    var denied by rememberSaveable { mutableStateOf(false) }
+    val request = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { result ->
+        val granted = CALL_PERMISSIONS.all { result[it] == true || context.checkSelfPermission(it) == PackageManager.PERMISSION_GRANTED }
+        denied = !granted
+        prefs.setAnswerCalls(granted)
+    }
+    val colors = Pillion.colors
+    PillionCard {
+        Row(
+            Modifier
+                .fillMaxWidth()
+                .toggleable(value = on, role = Role.Switch) { turnOn ->
+                    when {
+                        !turnOn -> prefs.setAnswerCalls(false)
+                        CALL_PERMISSIONS.all { context.checkSelfPermission(it) == PackageManager.PERMISSION_GRANTED } -> prefs.setAnswerCalls(true)
+                        else -> request.launch(CALL_PERMISSIONS)
+                    }
+                },
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(Space.m),
+        ) {
+            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                Text(stringResource(R.string.settings_calls_switch), style = MaterialTheme.typography.titleSmall, color = colors.ink)
+                Text(stringResource(R.string.settings_calls_note), style = MaterialTheme.typography.bodyMedium, color = colors.inkSecondary)
+            }
+            Switch(checked = on, onCheckedChange = null)
+        }
+        if (denied && !on) {
+            Text(stringResource(R.string.settings_calls_denied), style = MaterialTheme.typography.bodySmall, color = colors.inkSecondary)
         }
     }
 }

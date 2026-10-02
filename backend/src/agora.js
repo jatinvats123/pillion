@@ -13,6 +13,7 @@ import {
 } from 'agora-agents';
 import { config } from './config.js';
 import {
+  CALL_RULES,
   FAILURE_MESSAGE,
   FAMILY_JOINED,
   FILLER_PHRASES,
@@ -110,6 +111,7 @@ function buildAgent(ride, resumed) {
 
 function buildLlm(ride, resumed) {
   const systemMessages = [{ role: 'system', content: SYSTEM_PROMPT }];
+  if (config.callAnswer.enabled) systemMessages.push({ role: 'system', content: CALL_RULES });
   if (resumed) systemMessages.push({ role: 'system', content: RESUMED_CONTEXT });
   const common = {
     systemMessages,
@@ -182,6 +184,8 @@ export async function startRide() {
     guardianBaseUrl: config.guardian.enabled ? config.publicBaseUrl : null,
     // The voice stops after this long (0 = no limit); safety keeps running on the phone.
     maxRideMinutes: config.limits.maxRideMinutes,
+    // Answer calls by voice: the phone may keep Pillion on while it rings and report the call.
+    callAnswer: config.callAnswer.enabled,
   };
 }
 

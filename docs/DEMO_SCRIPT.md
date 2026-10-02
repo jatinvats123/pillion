@@ -19,6 +19,20 @@ editor). Every line the rider speaks is in the "Rider" column; English subtitles
 | 2:20–2:50 | **Architecture + Agora slide** (the README's diagram, cleaned up). Voice-over: ConvoAI agent per ride (Sarvam STT/TTS, managed gpt-4o-mini, VAD turn detection, filler words, metrics), custom tools, RTC with AI noise suppression + echo cancellation, RTM for transcripts and server-sent device requests, the speak API for safety prompts, RTC-only tokens + Web SDK for family, agent stop/restart handoff. | — | — | — |
 | 2:50–3:00 | **End card:** logo, "Pillion — the AI that rides with you", `github.com/jatinvats123/pillion`, "APK in Releases", "Built by Jatin Vats, solo, on Agora Conversational AI". | — | — | — |
 
+## Add-on clip: Answer calls by voice (≈ 20 s)
+
+Needs `CALL_ANSWER_ENABLED=true` on the backend (Render: Environment, then a manual deploy) and **Settings →
+Answer calls by voice** on in the app (allow both permissions). The second phone is the demo order's test
+number. Wired earphones: the ringtone and the question both play in them (tested on the Realme). Bike parked,
+phone in the pocket, screen off.
+
+| Time | Shot | Rider says | Pillion says | English subtitle |
+|---|---|---|---|---|
+| 0:00–0:03 | Text on screen: *"A customer calls mid-ride. Hands stay on the handlebar."* The second phone dials. | — | — | — |
+| 0:03–0:10 | The Realme rings in the pocket (insert: the second phone's screen "Calling…"). | "Haan, utha lo." | (the phone, over the ringtone) "Customer Rahul का call आ रहा है। उठाऊँ?" | "Your customer Rahul is calling. Pick up?" / "Yes, pick it up." |
+| 0:10–0:14 | The call connects (insert: the second phone's timer starts). Caption: "Answered by voice in ~2 s." | "Haan Rahul, 5 minute mein pahunch raha hoon." | — | "Yes Rahul, I'll be there in 5 minutes." |
+| 0:14–0:20 | Second call, same setup. | "Baad mein." | "Customer Rahul का call आ रहा है। उठाऊँ?" | "Later." → the call is declined (insert: "Call ended" on the second phone). |
+
 ## Shorts cut (30–45 s, 1080×1920)
 
 1. **0–3 s** hook, text on screen: "Riding? Don't touch your phone." Rider (parked): "Next drop kitna door hai?"
@@ -95,6 +109,8 @@ Android may not let a recorder capture at all. So for takes where Pillion talks:
       screen and seeded earnings look right.
 - [ ] Rider name "Jatin"; emergency contact = your second phone; **Settings → Demo order: test number** =
       your second phone.
+- [ ] Call add-on: `CALL_ANSWER_ENABLED=true` on the server and **Settings → Answer calls by voice** on.
+      The second phone is both the test number and a contact: the customer match wins ("Customer Rahul").
 - [ ] Sample order screenshots in the gallery: `.\scripts\push-order-samples.ps1 -Serial <IP:port>`.
 - [ ] Both phones charged above 80%; the Realme's battery optimisation off for Pillion.
 - [ ] **Do Not Disturb** on the Realme with an exception for the second phone; notifications from other
