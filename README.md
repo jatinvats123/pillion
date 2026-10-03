@@ -35,7 +35,7 @@ an eye on you.
 |---|---|
 | 🎙️ **Voice co-pilot** | Earphones in, just talk. Hindi, English or Hinglish, real-time, and you can interrupt it mid-sentence. |
 | 🧭 **Actions by voice** | Next-drop ETA, the nearest petrol pump / puncture shop / ATM / toilet, today's earnings vs yesterday, the weather where you are (with a heat or rain warning), text or call the customer after a spoken "yes". |
-| 📞 **Answer calls by voice** | The phone rings in your pocket: Pillion says who it is ("Customer Rahul का call आ रहा है। उठाऊँ?", an emergency contact by name, or an unknown number) and picks up or declines when you say "haan" or "baad mein". The caller's number never leaves the phone. Off until you turn it on in Settings. |
+| 📞 **Answer calls by voice** | The phone rings in your pocket: Pillion says who it is ("Customer Rahul का call आ रहा है। उठाऊँ?", an emergency contact by name, or an unknown number) and picks up or declines when you say "haan" or "baad mein". The caller's number never leaves the phone. Off until you turn it on in Settings. **Tested on 20 real calls: 19 handled correctly.** |
 | 📄 **Order scan** | Share a screenshot of the delivery app's order screen to Pillion: on-device OCR reads the customer's name, number and drop address; you confirm it on one card. |
 | 🚨 **Crash check + SOS** | The phone's sensors detect a crash. Pillion asks "Aap theek ho?", then SMSes your emergency contacts with your location. **Works with no internet.** |
 | 👨‍👩‍👦 **Live Guardian** | The SOS SMS carries a link: family opens it in a browser, **hears you, talks into your earphones and sees your live location**. Pillion steps aside while they're on. |
