@@ -19,6 +19,46 @@
 
 ---
 
+## At a glance
+
+**Pillion is a hands-free voice co-pilot for India's delivery and bike-taxi riders, built on Agora
+Conversational AI.** Earphones in, phone in the pocket: the rider talks in Hindi, English or Hinglish, and
+Pillion answers, acts and watches over them.
+
+**What it does**
+- 🎙️ **Real-time voice** in Hindi, English and Hinglish. Interrupt it mid-sentence; every Hindi line gets an
+  English subtitle.
+- 🧭 **Actions by voice:** next-drop ETA, the nearest petrol pump / puncture shop / ATM / toilet, today's
+  earnings vs yesterday, the weather with a heat or rain warning, and a text or call to the customer after a
+  spoken "yes" that the server double-checks.
+- 📞 **Answers your phone calls by voice:** "Customer Rahul का call आ रहा है। उठाऊँ?" → "haan" or "baad mein".
+  **Tested on 20 real calls: 19 handled correctly.**
+- 📄 **Order scan:** share a screenshot of the delivery app; on-device OCR (Hindi + English) reads the
+  customer's name, number and drop address.
+- 🚨 **Crash detection + SOS:** the phone's sensors detect a fall, Pillion asks "Aap theek ho?", and if nobody
+  answers, the emergency contacts get an SMS with the location. **Works with no internet.** Or just say
+  "SOS bhejo".
+- 👨‍👩‍👦 **Live Guardian:** the SOS link lets family **hear the rider, talk into their earphones and see them on
+  a live map**. Pillion steps aside while they talk and comes back when they leave.
+- 😴 **Fatigue reminder** after two hours of riding, dark mode after sunset, TalkBack labels, big touch targets.
+
+**How Agora powers it**
+- **Conversational AI Engine:** one agent per ride, started with the `agora-agents` SDK. Sarvam speech for
+  Indian languages, Agora-managed gpt-4o-mini, tuned turn detection and barge-in, filler words generated in the
+  rider's language.
+- **9 custom tools:** the LLM decides and the phone acts. My backend relays each tool call to the phone with
+  server-sent Signaling (RTM) messages: GPS, SMS, calls, SOS.
+- **Speak API** for safety prompts that cut through anything; **Think API** to tell the agent the phone is
+  ringing.
+- **Voice SDK on Android** with AI noise suppression and AI echo cancellation for traffic and wind.
+- **Signaling (RTM)** for live transcripts, the agent's state (it drives the glass globe) and per-turn latency
+  metrics.
+- **Web SDK + RTC-only tokens:** family joins the rider's channel from a browser, and the agent is stopped and
+  restarted around them.
+
+**Proof:** a signed APK (v1.0.0) and a live server, latency measured per turn, 19 of 20 calls handled
+correctly, and [23 pieces of Agora SDK feedback](#agora-sdk-feedback).
+
 ## The problem
 
 India's gig riders run their whole job on a phone they can't safely touch. The next drop, the customer who
