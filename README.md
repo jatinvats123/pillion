@@ -60,7 +60,7 @@ Pillion answers, acts and watches over them.
 - **Web SDK + RTC-only tokens:** family joins the rider's channel from a browser, and the agent is stopped and
   restarted around them.
 
-**Proof:** a signed APK (v1.0.0) and a live server, latency measured per turn, 19 of 20 calls handled
+**Proof:** a signed APK (v1.1.0) and a live server, latency measured per turn, 19 of 20 calls handled
 correctly, and [23 pieces of Agora SDK feedback](#agora-sdk-feedback).
 
 ## The problem
