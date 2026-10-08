@@ -1,3 +1,6 @@
+# Local notes for Claude Code (kept on the laptop, not in the repo)
+CLAUDE.md
+
 # Secrets — never commit
 .env
 .env.*
