@@ -191,6 +191,15 @@ fun RideRoute(
     val activity = LocalActivity.current
     var micPrompt by rememberSaveable { mutableStateOf(MicPrompt.None) }
     var cameraRefused by rememberSaveable { mutableStateOf(false) }
+    // GPS notice: shown for 8 s each time a ride loses GPS (or until closed), not for the whole ride.
+    var gpsNoticeVisible by remember { mutableStateOf(false) }
+    LaunchedEffect(state.rideActive, gpsAvailable) {
+        gpsNoticeVisible = state.rideActive && !gpsAvailable
+        if (gpsNoticeVisible) {
+            delay(8_000)
+            gpsNoticeVisible = false
+        }
+    }
 
     // Order scan: a screenshot from the system photo picker (no storage permission), or the camera.
     val appContext = context.applicationContext
@@ -283,12 +292,13 @@ fun RideRoute(
             }
             MicPrompt.None -> Unit
         }
-        if (state.rideActive && !gpsAvailable) add {
+        if (gpsNoticeVisible) add {
             NoticeCard(
                 title = stringResource(if (approximateLocation) R.string.gps_weak_title else R.string.gps_unavailable_title),
                 body = stringResource(if (approximateLocation) R.string.gps_weak_body else R.string.gps_unavailable_body),
                 icon = R.drawable.ic_location_on,
                 safety = true,
+                onDismiss = { gpsNoticeVisible = false },
             )
         }
         state.permissionNeeded?.let { permission ->
