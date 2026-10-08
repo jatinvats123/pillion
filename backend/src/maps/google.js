@@ -86,7 +86,7 @@ export async function placesNear(origin, { category, query }, count = 3) {
 }
 
 // Scanned drop addresses via the Geocoding API (it must be enabled on the key). Not yet run against
-// the live API: Google billing verification is pending (see CLAUDE.md).
+// the live API: Google billing verification is pending.
 export async function geocodeAddress(address, { area, near }) {
   if (!config.maps.googleApiKey) throw new MapsError('maps_not_configured');
   const json = await fetchJson(
