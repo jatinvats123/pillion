@@ -5,6 +5,10 @@
 <h1 align="center">Pillion — the AI that rides with you</h1>
 
 <p align="center">
+  🏆 <b>1st place, <a href="https://www.commudle.com/communities/ai-mobile-coders/hackathons/voice-ai-hackathon">Agora Voice AI Hackathon 2026</a></b> by AI Mobile Coders (200+ registrations, 31 projects)
+</p>
+
+<p align="center">
   A hands-free voice co-pilot for India's delivery and bike-taxi riders, in Hindi, English and Hinglish.<br>
   Built on <b>Agora Conversational AI</b> for the Agora Voice AI Hackathon.
 </p>

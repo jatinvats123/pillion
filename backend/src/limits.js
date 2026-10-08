@@ -46,8 +46,8 @@ export function hasAppKey(req) {
 
 // ---- Starting rides
 
-const startsPerIp = rateLimiter({ max: 4, windowMs: 10 * 60_000 });
-const startsPerDevice = rateLimiter({ max: 4, windowMs: 10 * 60_000 });
+const startsPerIp = rateLimiter({ max: config.limits.startsPer10Min, windowMs: 10 * 60_000 });
+const startsPerDevice = rateLimiter({ max: config.limits.startsPer10Min, windowMs: 10 * 60_000 });
 
 // India time: the day's caps reset at midnight IST.
 const today = () => new Date(Date.now() + 5.5 * 3600_000).toISOString().slice(0, 10);

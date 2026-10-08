@@ -52,6 +52,10 @@ class SafetyAlarm(context: Context) {
     /** Starts the on-device TTS engine early (it takes a moment). Safe to call again. */
     fun prepare() {
         if (tts != null) return
+        connect()
+    }
+
+    private fun connect(onInit: (Boolean) -> Unit = {}) {
         tts = TextToSpeech(appContext) { status ->
             ttsReady = status == TextToSpeech.SUCCESS
             val engine = tts ?: return@TextToSpeech
@@ -60,7 +64,20 @@ class SafetyAlarm(context: Context) {
                 hindiVoice = engine.isLanguageAvailable(HINDI) >= TextToSpeech.LANG_AVAILABLE
             }
             Log.i(TAG, "On-device TTS ready=$ttsReady hindi=$hindiVoice")
+            onInit(ttsReady)
         }
+    }
+
+    /** A fresh binding starts the engine's process now; Android's own restart of a killed engine comes ~13 s later. */
+    private suspend fun reconnect(): Boolean {
+        tts?.shutdown()
+        tts = null
+        ttsReady = false
+        return withTimeoutOrNull(4_000) {
+            suspendCancellableCoroutine { continuation ->
+                connect { ready -> if (continuation.isActive) continuation.resume(ready) }
+            }
+        } ?: false
     }
 
     fun release() {
@@ -119,6 +136,16 @@ class SafetyAlarm(context: Context) {
      * and returns when done. False if on-device TTS isn't available.
      */
     suspend fun speak(line: SafetyLine, language: RiderLanguage): Boolean {
+        val started = System.currentTimeMillis()
+        if (speakOnce(line, language)) return true
+        // Failed at once: the engine's process was killed in the background (ColorOS does this to an
+        // idle engine; seen at the start of a ring on the Realme). Reconnect and try once more.
+        if (System.currentTimeMillis() - started > 1_000) return false
+        Log.w(TAG, "On-device TTS not bound: reconnecting")
+        return reconnect() && speakOnce(line, language)
+    }
+
+    private suspend fun speakOnce(line: SafetyLine, language: RiderLanguage): Boolean {
         val engine = tts?.takeIf { ttsReady } ?: return false
         val parts = when {
             language == RiderLanguage.English || !hindiVoice -> listOf(line.english to ENGLISH)
