@@ -1,5 +1,9 @@
-# Local notes for Claude Code (kept on the laptop, not in the repo)
+# Local notes (kept on the laptop, not in the repo)
 CLAUDE.md
+docs/DEMO_SCRIPT.md
+docs/SUBMISSION.md
+docs/RELEASE_CHECKLIST.md
+*.apk.sha256
 
 # Secrets — never commit
 .env
