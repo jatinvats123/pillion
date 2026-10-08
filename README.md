@@ -346,33 +346,6 @@ couple cost me a day each.
 | 22 | The Android RTC SDK listens to the phone's call state itself: the moment the phone rings it stops capture and playout ("system phone call ring", `LOCAL_AUDIO_STREAM_REASON_INTERRUPTED`), so a voice agent can't ask "shall I answer?" or hear the reply. No documented switch; I found `{"che.audio.bypass_pstn_call_event": true}` in the 4.6.4 native library, and with it the mic stays on while the phone rings (the rider's "हां उठाओ" was transcribed mid-ring). | A documented option to keep audio during a ring, for assistants that handle calls. |
 | 23 | Text injected with `think` comes back over RTM as a `user.transcription`, so it shows up in the client's transcript as if the user had said it, and it gets a filler word if the LLM takes over 1.5 s. I filter it on the phone by a prefix. | Mark think turns in `user.transcription` (e.g. `source: "think"`), and let `think` skip filler words. |
 
-## Known limits
-
-- **Crash detection:** validated on synthetic traces only (see [Safety design](#safety-design)).
-- **Order scan:** tested on mock order screens and unit-test text, not on real delivery apps; real layouts
-  will need new labels. The parser never guesses: an unfamiliar layout gives empty fields, not wrong ones.
-  Masked numbers (`98XXX XX123`) stay masked, so SMS/call won't work for those orders ("call from the
-  delivery app"). The camera can't scan the delivery app on the same phone: share a screenshot instead.
-- **Maps:** Geoapify (free, OpenStreetMap data) has **no live traffic**. ETAs use its typical-traffic model
-  and Pillion never claims live traffic. House-level geocoding of Indian addresses is weak on OSM, so most
-  scanned drops land at locality level and the ETA is said as "roughly". Google Maps is implemented behind
-  `MAPS_PROVIDER=google` but untested (billing verification).
-- **Answer calls by voice:** tested on one phone (Realme 5 Pro, ColorOS, Android 11) with wired earphones.
-  Delivery apps usually call through masked numbers, so their calls come up as "unknown number, maybe the
-  customer". Android mutes other apps' sound while the phone rings, so the phone asks the question itself
-  (on-device TTS on the alarm channel, which also plays on the loudspeaker); Pillion's mic stays on through an
-  undocumented Agora engine parameter (SDK feedback #22). `READ_CALL_LOG` and `ANSWER_PHONE_CALLS` are
-  sensitive permissions: fine for an APK from GitHub, a Play Store policy question later. Answering uses
-  Telecom's `acceptRingingCall` / `endCall`, deprecated since Android 10 but working; Bluetooth earphones and
-  Android 12+ phones are untested.
-- **Jev (intent router):** the community key's rate limit is tight (one call, then 429s for a minute), so
-  Jev runs beside the LLM and never on the critical path; when it's slow or limited, nothing changes.
-- **Latency:** 2.3–4.6 s end to end, not yet under my 2 s target.
-- **Demo server:** a free Render instance that sleeps when idle (the first ride after a quiet spell takes up
-  to a minute), 10 minutes of voice per ride, a daily cap on rides, and in-memory state: a server restart
-  ends live rides and SOS links.
-- **Emulator:** voice doesn't work on my emulator (silent host mic, broken audio output); I test voice on a
-  real phone.
 ## Run it yourself
 
 **You need:** Node.js ≥ 20.12, Android Studio (its bundled JDK), an Agora project with the App Certificate
