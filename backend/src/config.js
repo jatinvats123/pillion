@@ -79,6 +79,7 @@ export const config = {
     maxRidesPerDay: Number(env('MAX_RIDES_PER_DAY', '40')),
     maxAgentMinutesPerDay: Number(env('MAX_AGENT_MINUTES_PER_DAY', '300')),
     maxConcurrentRides: Number(env('MAX_CONCURRENT_RIDES', '5')),
+    startsPer10Min: Number(env('MAX_STARTS_PER_10_MIN', '4')), // per IP and per device
   },
   // /debug/* (think, history, latency). Default: on in local mode, off in public mode.
   debugRoutes: env('DEBUG_ROUTES', env('APP_KEY') ? 'false' : 'true').toLowerCase() === 'true',
