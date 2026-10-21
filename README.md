@@ -9,6 +9,10 @@
 </p>
 
 <p align="center">
+  <a href="https://github.com/jatinvats123/pillion/actions/workflows/android-tests.yml"><img src="https://github.com/jatinvats123/pillion/actions/workflows/android-tests.yml/badge.svg" alt="Android unit tests"></a>
+</p>
+
+<p align="center">
   A hands-free voice co-pilot for India's delivery and bike-taxi riders, in Hindi, English and Hinglish.<br>
   Built on <b>Agora Conversational AI</b> for the Agora Voice AI Hackathon.
 </p>
@@ -20,6 +24,14 @@
   <a href="#try-it-in-two-minutes">Try it in two minutes</a> ·
   <a href="#how-i-use-agora">How I use Agora</a>
 </p>
+
+**TL;DR**
+
+- 1st of 31 projects (solo), Agora Voice AI Hackathon 2026.
+- Hands-free Hindi, English and Hinglish voice co-pilot for delivery riders: Android app (Kotlin, Jetpack Compose) plus a Node.js backend on Agora Conversational AI.
+- 9 LLM tools on real GPS and map data; 19 of 20 real phone calls handled correctly.
+- Crash detection with offline SMS SOS; LLM time-to-first-token cut from 24–37 s to ~1 s.
+- 106 unit tests run in CI; signed APK releases.
 
 ---
 
